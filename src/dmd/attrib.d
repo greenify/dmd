@@ -562,9 +562,7 @@ extern (C++) final class ProtDeclaration : AttribDeclaration
     {
         if (pkg_identifiers)
         {
-            Dsymbol tmp;
-            Package.resolve(pkg_identifiers, &tmp, null);
-            protection.pkg = tmp ? tmp.isPackage() : null;
+            Package.resolve(null, pkg_identifiers, null, &protection.pkg);
             pkg_identifiers = null;
         }
         if (protection.kind == PROTpackage && protection.pkg && sc._module)

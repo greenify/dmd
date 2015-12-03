@@ -174,17 +174,21 @@ extern (C++) class Package : ScopeDsymbol
 
     /****************************************************
      * Input:
+     *      dst             package tree root
      *      packages[]      the pkg1.pkg2 of pkg1.pkg2.mod
      * Returns:
      *      the symbol table that mod should be inserted into
      * Output:
-     *      *pparent        the rightmost package, i.e. pkg2, or NULL if no packages
      *      *ppkg           the leftmost package, i.e. pkg1, or NULL if no packages
+     *      *pparent        the rightmost package, i.e. pkg2, or NULL if no packages
      */
-    static DsymbolTable resolve(Identifiers* packages, Dsymbol* pparent, Package* ppkg)
+    static DsymbolTable resolve(DsymbolTable dst, Identifiers* packages, Package* ppkg, Package* pparent)
     {
-        DsymbolTable dst = Module.modules;
-        Dsymbol parent = null;
+        if (!dst)
+            dst = Module.modules;
+
+        Package parent = null;
+
         //printf("Package::resolve()\n");
         if (ppkg)
             *ppkg = null;
@@ -851,9 +855,12 @@ extern (C++) final class Module : Package
              * the name of this module.
              */
             this.ident = md.id;
+            Package pparent = null;
             Package ppack = null;
-            dst = Package.resolve(md.packages, &this.parent, &ppack);
+            dst = Package.resolve(null, md.packages, &ppack, &pparent);
+            this.parent = pparent;
             assert(dst);
+
             Module m = ppack ? ppack.isModule() : null;
             if (m && (strcmp(m.srcfile.name.name(), "package.d") != 0 &&
                       strcmp(m.srcfile.name.name(), "package.di") != 0))
