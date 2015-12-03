@@ -66,9 +66,6 @@ extern (C++) final class Import : Dsymbol
     Module mod;
     Import overnext;
 
-    // corresponding AliasDeclarations for alias=name pairs
-    AliasDeclarations aliasdecls;
-
     extern (D) this(Loc loc, Identifiers* packages, Identifier id, Identifier aliasId, int isstatic)
     {
         super(null);
@@ -115,8 +112,6 @@ extern (C++) final class Import : Dsymbol
     {
         if (isstatic)
             error("cannot have an import bind list");
-        if (!aliasId)
-            this.ident = null; // make it an anonymous import
         names.push(name);
         aliases.push(_alias);
     }
@@ -237,28 +232,9 @@ extern (C++) final class Import : Dsymbol
         if (sc.explicitProtection)
             protection = sc.protection.kind;
 
-        // FQN is visible if this is not an unrenamed selective import.
-        if (this.ident)
-        {
-            addPackage(sc, sds);
-        }
-
-        /* Instead of adding the import to sds's symbol table,
-         * add each of the alias=name pairs
-         */
-        for (size_t i = 0; i < names.dim; i++)
-        {
-            auto name = names[i];
-            auto aliasName = aliases[i];
-            if (!aliasName)
-                aliasName = name;
-            auto tname = new TypeIdentifier(loc, name);
-            auto ad = new AliasDeclaration(loc, aliasName, tname);
-            ad._import = this;
-            ad.addMember(sc, sds);
-
-            aliasdecls.push(ad);
-        }
+        // Bugzilla 12359: Module FQN is always visible
+        // even if this is an unrenamed selective import.
+        addPackage(sc, sds);
     }
 
     /********************************************
@@ -288,21 +264,9 @@ extern (C++) final class Import : Dsymbol
         if (!sds.symtab)
             sds.symtab = new DsymbolTable();
 
-        // `this.ident` is null if this is an unrenamed selective import.
-        auto leftmostId = this.ident;
-        if (!leftmostId)
-        {
-            if (aliasId)
-                leftmostId = aliasId;
-            else if (packages && packages.dim)
-                leftmostId = (*packages)[0];
-            else
-                leftmostId = id;
-        }
-
         // Validate whether the leftmost package name is already exists in symtab?
-        assert(leftmostId);
-        if (auto ss = sds.symtab.lookup(leftmostId))
+        assert(this.ident);
+        if (auto ss = sds.symtab.lookup(this.ident))
             if (aliasId || !packages || packages.dim == 0)
             {
                 auto imp = ss.isImport();
@@ -545,34 +509,6 @@ extern (C++) final class Import : Dsymbol
         }
     }
 
-    override void setScope(Scope* sc)
-    {
-        Dsymbol.setScope(sc);
-        if (aliasdecls.dim)
-        {
-            if (!mod)
-                importAll(sc);
-
-            sc = sc.push(mod);
-            /* BUG: Protection checks can't be enabled yet. The issue is
-             * that Dsymbol::search errors before overload resolution.
-             */
-            version (none)
-            {
-                sc.protection = protection;
-            }
-            else
-            {
-                sc.protection = Prot(PROTpublic);
-            }
-            foreach (ad; aliasdecls)
-                {
-                ad.setScope(sc);
-            }
-            sc = sc.pop();
-        }
-    }
-
     override void importAll(Scope* sc)
     {
         if (!mod)
@@ -589,15 +525,13 @@ extern (C++) final class Import : Dsymbol
         }
         assert(sds);
 
-        if (!isstatic && !aliasId && !names.dim)
+        if (!isstatic && !aliasId && !names.dim || (!aliasId && names.dim))
         {
             sds.importScope(this, Prot(protection));
         }
 
-        /* Excepting unnamed selective imports, the full package name of public imports
-         * would be pulled to other *derived* scopes.
+        /* The full package name of public imports would be pulled to other *derived* scopes.
          */
-        if (!names.dim || aliasId)
         {
             Dsymbols* publicImports = null;
             if (auto m = sds.isModule())
@@ -673,6 +607,11 @@ extern (C++) final class Import : Dsymbol
                 }
             }
 
+            for (size_t i = 0; i < names.dim; i++)
+                if (!mod.search(loc, names[i], IgnorePrivateSymbols))
+                        s = mod.search(loc, s.ident, IgnorePrivateSymbols);
+                    if (s)
+                    //ad.type = Type.terror;    // todo?
             }
         }
     }

@@ -356,6 +356,7 @@ class OverloadSet : public Dsymbol
 {
 public:
     Dsymbols a;         // array of Dsymbols
+    bool bug12359;
 
     void push(Dsymbol *s);
     OverloadSet *isOverloadSet() { return this; }

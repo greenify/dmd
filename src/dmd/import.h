@@ -44,8 +44,6 @@ public:
     Module *mod;
     Import *overnext;
 
-    AliasDeclarations aliasdecls; // corresponding AliasDeclarations for alias=name pairs
-
     void addAlias(Identifier *name, Identifier *alias);
     const char *kind() const;
     Prot prot();
