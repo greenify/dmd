@@ -42,7 +42,7 @@ public:
     Identifiers aliases;
 
     Module *mod;
-    Package *pkg;               // leftmost package/module
+    Import *overnext;
 
     AliasDeclarations aliasdecls; // corresponding AliasDeclarations for alias=name pairs
 
@@ -51,10 +51,12 @@ public:
     Prot prot();
     Dsymbol *syntaxCopy(Dsymbol *s);    // copy only syntax trees
     void load(Scope *sc);
+    void addMember(Scope *sc, ScopeDsymbol *sds);
+    void addPackage(Scope *sc, ScopeDsymbol *sds);
+    void setScope(Scope *sc);
     void importAll(Scope *sc);
     void semantic(Scope *sc);
     Dsymbol *toAlias();
-    void addMember(Scope *sc, ScopeDsymbol *sds);
     void setScope(Scope* sc);
     Dsymbol *search(Loc loc, Identifier *ident, int flags = SearchLocalsOnly);
     bool overloadInsert(Dsymbol *s);

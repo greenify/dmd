@@ -732,7 +732,14 @@ extern (C++) Expression semanticTraits(TraitsExp e, Scope* sc)
 
             if (auto fd = s.isFuncDeclaration()) // https://issues.dlang.org/show_bug.cgi?id=8943
                 s = fd.toAliasFunc();
-            if (!s.isImport()) // https://issues.dlang.org/show_bug.cgi?id=8922
+            // https://issues.dlang.org/show_bug.cgi?id=8922
+            if (s.isImport() || s.isPackage())
+            {
+                s = s.toParent();
+                if (s && !(s.isPackage() && !s.isModule()))
+                    s = null;
+            }
+            else
                 s = s.toParent();
         }
         if (!s || s.isImport())

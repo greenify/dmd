@@ -175,6 +175,12 @@ extern (C++) class Package : ScopeDsymbol
         return "package";
     }
 
+    override final Prot prot()
+    {
+        // local package tree is always private in each scope
+        return Prot(PROTprivate);
+    }
+
     /****************************************************
      * Input:
      *      dst             package tree root
@@ -294,6 +300,14 @@ extern (C++) class Package : ScopeDsymbol
         }
 
         auto s = ScopeDsymbol.search(loc, ident, flags);
+        if (!s && !isPackageMod())
+        {
+            if (auto pkg = enclosingPkg())
+            {
+                assert(pkg !is this);
+                s = pkg.search(loc, ident, flags);
+            }
+        }
         return s;
     }
 
@@ -311,6 +325,13 @@ extern (C++) class Package : ScopeDsymbol
             if (auto imp = aliassym.isImport())
                 return imp.mod;
         }
+        return null;
+    }
+
+    Package enclosingPkg()
+    {
+        if (isPkgMod != PKGmodule && aliassym)
+            return aliassym.isPackage();
         return null;
     }
 }
