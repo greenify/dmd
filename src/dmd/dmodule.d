@@ -157,7 +157,10 @@ extern (C++) class Package : ScopeDsymbol
 {
     PKG isPkgMod;
     uint tag;        // auto incremented tag, used to mask package tree in scopes
-    Module mod;     // !=null if isPkgMod == PKGmodule
+
+    // isPkgMod == PKGmodule: Module/Import object corresponding to 'package.d'
+    // isPkgMod != PKGmodule: Package object in enclosing scope
+    Dsymbol aliassym;
 
     final extern (D) this(Identifier ident)
     {
@@ -267,16 +270,31 @@ extern (C++) class Package : ScopeDsymbol
     {
         //printf("%s Package.search('%s', flags = x%x)\n", toChars(), ident.toChars(), flags);
         flags &= ~SearchLocalsOnly;  // searching an import is always transitive
-        if (!isModule() && mod)
+        //printf("%s.Package::search(ident='%s', flags=x%x)\n", toChars(), ident.toChars(), flags);
+
+        assert(!isModule());
+
+        if (isPkgMod == PKGmodule)
         {
-            // Prefer full package name.
-            Dsymbol s = symtab ? symtab.lookup(ident) : null;
+            /* Prefer symbols declared in package.d.
+             *
+             *  import std.algorithm;
+             *  import std; // std/package.d
+             *  void main() {
+             *      map!(a=>a*2)([1,2,3]);
+             *      std.map!(a=>a*2)([1,2,3]);
+             *      std.algorithm.map!(a=>a*2)([1,2,3]);
+             *      // iff std/package.d doesn't have a symbol named "algorithm",
+             *      // std/algorithm.d would hit.
+             *  }
+             */
+            auto s = aliassym.search(loc, ident, flags);
             if (s)
                 return s;
-            //printf("[%s] through pkdmod: %s\n", loc.toChars(), toChars());
-            return mod.search(loc, ident, flags);
         }
-        return ScopeDsymbol.search(loc, ident, flags);
+
+        auto s = ScopeDsymbol.search(loc, ident, flags);
+        return s;
     }
 
     override void accept(Visitor v)
@@ -288,7 +306,10 @@ extern (C++) class Package : ScopeDsymbol
     {
         if (isPkgMod == PKGmodule)
         {
-            return mod;
+            if (auto mod = aliassym.isModule())
+                return mod;
+            if (auto imp = aliassym.isImport())
+                return imp.mod;
         }
         return null;
     }
@@ -955,7 +976,7 @@ extern (C++) final class Module : Package
             auto p = new Package(ident);
             p.parent = this.parent;
             p.isPkgMod = PKGmodule;
-            p.mod = this;
+            p.aliassym = this;
             p.tag = this.tag; // reuse the same package tag
             p.symtab = new DsymbolTable();
             s = p;
@@ -987,7 +1008,7 @@ extern (C++) final class Module : Package
                      * link it to the actual module.
                      */
                     pkg.isPkgMod = PKGmodule;
-                    pkg.mod = this;
+                    pkg.aliassym = this;
                     pkg.tag = this.tag; // reuse the same package tag
                 }
                 else

@@ -38,7 +38,10 @@ class Package : public ScopeDsymbol
 public:
     PKG isPkgMod;
     unsigned tag;       // auto incremented tag, used to mask package tree in scopes
-    Module *mod;        // != NULL if isPkgMod == PKGmodule
+
+    // isPkgMod == PKGmodule: Module/Import object corresponding to 'package.d'
+    // isPkgMod != PKGmodule: Package object in enclosing scope
+    Dsymbol *aliassym;
 
     const char *kind() const;
 
