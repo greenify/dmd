@@ -1570,7 +1570,7 @@ struct X95
 
 void test95()
 {
-   X95.core.stdc.stdio.printf("hello\n");
+    static assert(!__traits(compiles, X95.core.stdc.stdio.printf("hello\n")));
 }
 
 /***************************************************/
