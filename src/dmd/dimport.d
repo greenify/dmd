@@ -24,6 +24,7 @@ import dmd.globals;
 import dmd.identifier;
 import dmd.mtype;
 import dmd.visitor;
+import ddmd.root.rmem;
 
 extern (C++) Package findPackage(DsymbolTable dst, Identifiers* packages, size_t dim)
 {
@@ -128,6 +129,13 @@ extern (C++) final class Import : Dsymbol
     override Prot prot()
     {
         return protection;
+    }
+
+    final Import copy()
+    {
+        auto imp = cast(Import)mem.xmalloc(__traits(classInstanceSize, Import));
+        memcpy(cast(void*)imp, cast(void*)this, __traits(classInstanceSize, Import));
+        return imp;
     }
 
     // copy only syntax trees
@@ -568,6 +576,45 @@ extern (C++) final class Import : Dsymbol
         {
             sds.importScope(this, Prot(protection));
         }
+
+        /* Excepting unnamed selective imports, the full package name of public imports
+         * would be pulled to other *derived* scopes.
+         */
+        if (!names.dim || aliasId)
+        {
+            Dsymbols* publicImports = null;
+            if (auto m = sds.isModule())
+            {
+                if (protection == PROTpublic)
+                {
+                    if (!m.publicImports)
+                        m.publicImports = new Dsymbols();
+                    publicImports = m.publicImports;
+                }
+            }
+            else if (auto cd = sds.isClassDeclaration())
+            {
+                if (protection == PROTpublic || protection == PROTprotected)
+                {
+                    if (!cd.publicImports)
+                        cd.publicImports = new Dsymbols();
+                    publicImports = cd.publicImports;
+                }
+            }
+            if (publicImports)
+            {
+                for (size_t i = 0; ; i++)
+                {
+                    if (i == publicImports.dim)
+                    {
+                        publicImports.push(this);
+                        break;
+                    }
+                    if ((*publicImports)[i] == this)
+                        break;
+                }
+            }
+        }
     }
 
     override void semantic(Scope* sc)
@@ -590,6 +637,25 @@ extern (C++) final class Import : Dsymbol
 
 
                 }
+
+            // Pull public imports from mod into the importing scope.
+            if (!names.dim && mod.publicImports)
+            {
+                foreach (s; *mod.publicImports)
+                {
+                    auto imp = s.isImport();
+                    if (!imp)
+                        continue;
+
+                    //printf("\t[%s] imp = %s at %s\n", loc.toChars(), imp.toChars(), imp.loc.toChars());
+                    imp = imp.copy();
+                    imp.loc = loc;
+                    imp.protection = protection;
+                    imp.overnext = null;
+                    imp.addPackage(sc, null);
+                }
+            }
+
             }
         }
     }

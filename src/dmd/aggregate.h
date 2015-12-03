@@ -291,6 +291,7 @@ public:
 
     Abstract isabstract;                // 0: fwdref, 1: is abstract class, 2: not abstract
     Baseok baseok;                      // set the progress of base classes resolving
+    Dsymbols *publicImports;            // array of public/protected import declarations
     Symbol *cpp_type_info_ptr_sym;      // cached instance of class Id.cpp_type_info_ptr
 
     static ClassDeclaration *create(Loc loc, Identifier *id, BaseClasses *baseclasses, Dsymbols *members, bool inObject);
