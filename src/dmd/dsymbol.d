@@ -179,11 +179,11 @@ enum : int
     IgnorePrivateImports    = 0x01, // don't search private imports
     IgnoreErrors            = 0x02, // don't give error messages
     IgnoreAmbiguous         = 0x04, // return NULL if ambiguous
-    SearchLocalsOnly        = 0x08, // only look at locals (don't search imports)
-    SearchImportsOnly       = 0x10, // only look in imports
-    SearchUnqualifiedModule = 0x20, // the module scope search is unqualified,
-                                    // meaning don't search imports in that scope,
-                                    // because qualified module searches search
+    IgnoreImportedFQN       = 0x08, // don't find imported FQNs
+    IgnorePrivateImports    = 0x10, // don't find privately imported symbols
+    IgnoreOverloadImports   = 0x20, // don't find overloaded imports
+
+    IgnorePrivateSymbols    = IgnorePrivateMembers | IgnorePrivateImports,
                                     // their imports
     IgnoreSymbolVisibility  = 0x80, // also find private and package protected symbols
 }
@@ -724,6 +724,7 @@ extern (C++) class Dsymbol : RootObject
         //printf("Dsymbol::searchX(this=%p,%s, ident='%s')\n", this, toChars(), ident.toChars());
         Dsymbol s = toAlias();
         Dsymbol sm;
+
         if (Declaration d = s.isDeclaration())
         {
             if (d.inuse)
@@ -732,27 +733,30 @@ extern (C++) class Dsymbol : RootObject
                 return null;
             }
         }
+
         switch (id.dyncast())
         {
         case DYNCAST.identifier:
-            sm = s.search(loc, cast(Identifier)id);
-            break;
+                sm = s.search(loc, cast(Identifier)id, IgnoreImportedFQN);
+                break;
         case DYNCAST.dsymbol:
             {
                 // It's a template instance
                 //printf("\ttemplate instance id\n");
                 Dsymbol st = cast(Dsymbol)id;
                 TemplateInstance ti = st.isTemplateInstance();
-                sm = s.search(loc, ti.name);
+                sm = s.search(loc, ti.name, IgnoreImportedFQN);
                 if (!sm)
                 {
                     sm = s.search_correct(ti.name);
                     if (auto imp = s.isImport())
                         s = imp.mod;
                     if (sm)
-                        .error(loc, "template identifier '%s' is not a member of %s '%s', did you mean %s '%s'?", ti.name.toChars(), s.kind(), s.toPrettyChars(), sm.kind(), sm.toChars());
+                        .error(loc, "template identifier '%s' is not a member of %s '%s', did you mean %s '%s'?",
+                            ti.name.toChars(), s.kind(), s.toPrettyChars(), sm.kind(), sm.toChars());
                     else
-                        .error(loc, "template identifier '%s' is not a member of %s '%s'", ti.name.toChars(), s.kind(), s.toPrettyChars());
+                        .error(loc, "template identifier '%s' is not a member of %s '%s'",
+                            ti.name.toChars(), s.kind(), s.toPrettyChars());
                     return null;
                 }
                 sm = sm.toAlias();
@@ -761,7 +765,8 @@ extern (C++) class Dsymbol : RootObject
                 {
                     if (auto imp = s.isImport())
                         s = imp.mod;
-                    .error(loc, "%s.%s is not a template, it is a %s", s.toPrettyChars(), ti.name.toChars(), sm.kind());
+                    .error(loc, "%s.%s is not a template, it is a %s",
+                        s.toPrettyChars(), ti.name.toChars(), sm.kind());
                     return null;
                 }
                 ti.tempdecl = td;
@@ -772,8 +777,8 @@ extern (C++) class Dsymbol : RootObject
             }
         case DYNCAST.type:
         case DYNCAST.expression:
-        default:
-            assert(0);
+            default:
+                assert(0);
         }
         return sm;
     }
@@ -1310,16 +1315,27 @@ public:
         //if (strcmp(ident.toChars(),"c") == 0) *(char*)0=0;
 
         // Look in symbols declared in this module
-        if (symtab && !(flags & SearchImportsOnly))
+        auto s1 = symtab ? symtab.lookup(ident) : null;
         {
             //printf(" look in locals\n");
             auto s1 = symtab.lookup(ident);
             if (s1)
             {
-                //printf("\tfound in locals = '%s.%s'\n",toChars(),s1.toChars());
+            //printf("\ts = %s '%s', prot = %d\n", s1.kind(), s1.toChars(), s1.prot());
+
+            // The found symbol which has private access should be invisible
+            // FIXME: Issue 10604 - Not consistent access check for overloaded symbols
+            if ((flags & IgnorePrivateMembers) && s1.prot().kind == PROTprivate)
+                return null;
+
+            if ((flags & IgnoreImportedFQN) && !this.isPackage() && (s1.isPackage() || s1.isImport()))
+            {
+                //printf("[%s] %s.ScopeDsymbol::search(s1 = %s '%s', flags=x%x)\n", loc.toChars(), toChars(), s1.kind(), s1.toChars(), flags);
+                return null;
+            }
                 return s1;
             }
-        }
+
         //printf(" not found in locals\n");
 
         // Look in imported scopes
@@ -1328,18 +1344,19 @@ public:
             //printf(" look in imports\n");
             Dsymbol s = null;
             OverloadSet a = null;
+
             // Look in imported modules
             for (size_t i = 0; i < importedScopes.dim; i++)
             {
                 // If private import, don't search it
-                if ((flags & IgnorePrivateImports) && prots[i] == PROTprivate)
+                if ((flags & IgnorePrivateSymbols) && prots[i] == PROTprivate)
                     continue;
-                int sflags = flags & (IgnoreErrors | IgnoreAmbiguous | IgnoreSymbolVisibility); // remember these in recursive searches
-                Dsymbol ss = (*importedScopes)[i];
-                //printf("\tscanning import '%s', prots = %d, isModule = %p, isImport = %p\n", ss.toChars(), prots[i], ss.isModule(), ss.isImport());
 
-                if (ss.isModule())
-                {
+                Dsymbol ss = (*importedScopes)[i];
+
+                //printf("\tscanning imports[%d] : %s '%s', prots = %d\n", i, ss.kind(), ss.toChars(), prots[i]);
+                auto s2 = ss.search(loc, ident,
+                    (flags & IgnorePrivateImports) | IgnoreOverloadImports);
                     if (flags & SearchLocalsOnly)
                         continue;
                 }
@@ -1353,9 +1370,6 @@ public:
                     sflags |= (flags & SearchLocalsOnly);
                 }
 
-                /* Don't find private members if ss is a module
-                 */
-                Dsymbol s2 = ss.search(loc, ident, sflags | (ss.isModule() ? IgnorePrivateImports : IgnoreNone));
                 import dmd.access : symbolIsVisible;
                 if (!s2 || !(flags & IgnoreSymbolVisibility) && !symbolIsVisible(this, s2))
                     continue;
@@ -1367,24 +1381,31 @@ public:
                 }
                 else if (s2 && s != s2)
                 {
-                    if (s.toAlias() == s2.toAlias() || s.getType() == s2.getType() && s.getType())
+                    if (s.toAlias() == s2.toAlias() ||
+                        s.getType() == s2.getType() && s.getType())
                     {
                         /* After following aliases, we found the same
                          * symbol, so it's not an ambiguity.  But if one
                          * alias is deprecated or less accessible, prefer
                          * the other.
                          */
-                        if (s.isDeprecated() || s.prot().isMoreRestrictiveThan(s2.prot()) && s2.prot().kind != PROTnone)
+                        if (s.isDeprecated() ||
+                            s.prot().isMoreRestrictiveThan(s2.prot()) && s2.prot().kind != PROTnone)
+                        {
                             s = s2;
+                        }
                     }
                     else
                     {
                         /* Two imports of the same module should be regarded as
                          * the same.
                          */
-                        Import i1 = s.isImport();
-                        Import i2 = s2.isImport();
-                        if (!(i1 && i2 && (i1.mod == i2.mod || (!i1.parent.isImport() && !i2.parent.isImport() && i1.ident.equals(i2.ident)))))
+                        auto i1 = s.isImport();
+                        auto i2 = s2.isImport();
+                        if (!(i1 && i2 &&
+                              (i1.mod == i2.mod ||
+                               (!i1.parent.isImport() && !i2.parent.isImport() &&
+                                i1.ident.equals(i2.ident)))))
                         {
                             /* https://issues.dlang.org/show_bug.cgi?id=8668
                              * Public selective import adds AliasDeclaration in module.
@@ -1393,16 +1414,21 @@ public:
                              */
                             s = s.toAlias();
                             s2 = s2.toAlias();
+
                             /* If both s2 and s are overloadable (though we only
                              * need to check s once)
                              */
-                            if ((s2.isOverloadSet() || s2.isOverloadable()) && (a || s.isOverloadable()))
+                            if ((s2.isOverloadSet() || s2.isOverloadable()) &&
+                                (a || s.isOverloadable()))
                             {
                                 a = mergeOverloadSet(ident, a, s2);
                                 continue;
                             }
-                            if (flags & IgnoreAmbiguous) // if return NULL on ambiguity
+
+                            // if return NULL on ambiguity
+                            if (flags & IgnoreAmbiguous)
                                 return null;
+
                             if (!(flags & IgnoreErrors))
                                 ScopeDsymbol.multiplyDefined(loc, s, s2);
                             break;
@@ -1410,6 +1436,7 @@ public:
                     }
                 }
             }
+
             if (s)
             {
                 /* Build special symbol if we had multiple finds
@@ -1420,9 +1447,10 @@ public:
                         a = mergeOverloadSet(ident, a, s);
                     s = a;
                 }
-                // TODO: remove once private symbol visibility has been deprecated
+
+                // FIXME: Issue 10604 - Not consistent access check for overloaded symbols
                 if (!(flags & IgnoreErrors) && s.prot().kind == PROTprivate &&
-                    !s.isOverloadable() && !s.parent.isTemplateMixin() && !s.parent.isNspace())
+                    s.parent && !s.parent.isTemplateMixin() && !s.parent.isNspace())
                 {
                     AliasDeclaration ad = void;
                     // accessing private selective and renamed imports is
@@ -1466,6 +1494,7 @@ public:
         else
         {
             assert(s.isOverloadable());
+
             /* Don't add to os[] if s is alias of previous sym
              */
             for (size_t j = 0; j < os.a.dim; j++)
@@ -1481,6 +1510,7 @@ public:
                 }
             }
             os.push(s);
+
         Lcontinue:
         }
         return os;

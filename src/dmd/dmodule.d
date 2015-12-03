@@ -294,7 +294,7 @@ extern (C++) class Package : ScopeDsymbol
              *      // std/algorithm.d would hit.
              *  }
              */
-            auto s = aliassym.search(loc, ident, flags);
+            auto s = aliassym.search(loc, ident, flags | IgnoreImportedFQN);
             if (s)
                 return s;
         }

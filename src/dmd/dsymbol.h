@@ -140,11 +140,11 @@ enum
     IgnorePrivateImports    = 0x01, // don't search private imports
     IgnoreErrors            = 0x02, // don't give error messages
     IgnoreAmbiguous         = 0x04, // return NULL if ambiguous
-    SearchLocalsOnly        = 0x08, // only look at locals (don't search imports)
-    SearchImportsOnly       = 0x10, // only look in imports
-    SearchUnqualifiedModule = 0x20, // the module scope search is unqualified,
-                                    // meaning don't search imports in that scope,
-                                    // because qualified module searches search
+    IgnoreImportedFQN       = 0x08, // don't find imported FQNs
+    IgnorePrivateImports    = 0x10, // don't find privately imported symbols
+    IgnoreOverloadImports   = 0x20, // don't find overloaded imports
+
+    IgnorePrivateSymbols    = IgnorePrivateMembers | IgnorePrivateImports,
                                     // their imports
     IgnoreSymbolVisibility  = 0x80, // also find private and package protected symbols
 };
