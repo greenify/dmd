@@ -310,6 +310,18 @@ extern (C++) final class Import : Dsymbol
                 {
                     // OK
                 }
+                else if (sc.func && !sds.isAggregateDeclaration())
+                {
+                    /* For backward compatibility:
+                     *  void foo() {
+                     *    int std;
+                     *    import std.stdio;  // 'std' package is implicitly hidden
+                     *    std = 10;          // refer variable 'std'
+                     *    writeln("hello");  // refer imported symbol
+                     *  }
+                     */
+                    return;
+                }
                 else
                 {
                     ScopeDsymbol.multiplyDefined(loc, ss, mod);
@@ -321,6 +333,11 @@ extern (C++) final class Import : Dsymbol
                 if (ss.isPackage())
                 {
                     // OK
+                }
+                else if (sc.func && !sds.isAggregateDeclaration())
+                {
+                    // For backward compatibility.
+                    return;
                 }
                 else
                 {
