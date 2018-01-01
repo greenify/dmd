@@ -1001,6 +1001,76 @@ extern (C++) void expandTuples(Expressions* exps)
 }
 
 /****************************************
+ * Expand alias this tuples.
+ */
+extern (C++) TupleDeclaration isAliasThisTuple(Expression e)
+{
+    if (!e.type)
+        return null;
+    Type t = e.type.toBasetype();
+Lagain:
+    if (Dsymbol s = t.toDsymbol(null))
+    {
+        AggregateDeclaration ad = s.isAggregateDeclaration();
+        if (ad && ad.aliasThisSymbols.dim > 0)
+        {
+            s = ad.aliasThisSymbols[0]; //Now it works only with single alias this
+            if (s && s.isVarDeclaration())
+            {
+                TupleDeclaration td = s.isVarDeclaration().toAlias().isTupleDeclaration();
+                if (td && td.isexp)
+                    return td;
+            }
+            if (Type att = aliasThisOf(t, 0))
+            {
+                t = att;
+                goto Lagain;
+            }
+        }
+    }
+    return null;
+}
+
+extern (C++) int expandAliasThisTuples(ref Expressions exps, size_t starti = 0)
+{
+    if (exps.dim == 0)
+        return -1;
+    for (size_t u = starti; u < exps.dim; u++)
+    {
+        Expression exp = exps[u];
+        TupleDeclaration td = isAliasThisTuple(exp);
+        if (td)
+        {
+            exps.remove(u);
+            for (size_t i = 0; i < td.objects.dim; ++i)
+            {
+                Expression e = isExpression((*td.objects)[i]);
+                assert(e);
+                assert(e.op == TOKdsymbol);
+                DsymbolExp se = cast(DsymbolExp)e;
+                Declaration d = se.s.isDeclaration();
+                assert(d);
+                e = new DotVarExp(exp.loc, exp, d);
+                assert(d.type);
+                e.type = d.type;
+                exps.insert(u + i, e);
+            }
+            version (none)
+            {
+                printf("expansion ->\n");
+                for (size_t i = 0; i < exps.dim; ++i)
+                {
+                    Expression e = (*exps)[i];
+                    printf("\texps[%d] e = %s %s\n", i, Token.tochars[e.op], e.toChars());
+                }
+            }
+            return cast(int) u;
+        }
+    }
+    return -1;
+}
+
+/****************************************
  * Get TemplateDeclaration enclosing FuncDeclaration.
  */
 extern (C++) TemplateDeclaration getFuncTemplateDecl(Dsymbol s)

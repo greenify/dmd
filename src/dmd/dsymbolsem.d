@@ -480,7 +480,7 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
 
                         exps.setDim(1);
                         (*exps)[0] = ve;
-                        expandAliasThisTuples(exps, 0);
+                        expandAliasThisTuples(*exps, 0);
 
                         for (size_t u = 0; u < exps.dim; u++)
                         {
@@ -498,7 +498,7 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
                             if (ee.type.implicitConvTo(arg.type))
                                 continue;
 
-                            if (expandAliasThisTuples(exps, u) != -1)
+                            if (expandAliasThisTuples(*exps, u) != -1)
                                 goto Lexpand2;
                         }
 
