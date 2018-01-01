@@ -2877,7 +2877,7 @@ extern (C++) class IdentifierExp : Expression
  * It tries to create DotIdExp from subtyped expression.
  * una(e) -> una(e.aliasthisX)
  */
-static bool atSubstIdent(Scope* sc, Expression e, void *ctx, Expression outexpr)
+bool atSubstIdent(Scope* sc, Expression e, void *ctx, Expression outexpr)
 {
     Identifier ident = cast(Identifier) ctx; // TODO
     Expression e1 = new DotIdExp(e.loc, e, ident);

@@ -2127,57 +2127,60 @@ extern (C++) abstract class Type : RootObject
     final Type aliasthisOf()
     {
         auto ad = isAggregate(this);
-        if (!ad || !ad.aliasthis)
+        if (!ad || !ad.aliasThisSymbols.dim == 0)
             return null;
 
-        auto s = ad.aliasthis;
-        if (s.isAliasDeclaration())
-            s = s.toAlias();
+        Expression res;
+        // TODO:
+        //if (!iterateAliasThis2(res, ad, sc, this, &foo, null))
+            //return null;
 
-        if (s.isTupleDeclaration())
-            return null;
+        //DSymbol s = res.toSymbol;
 
-        if (auto vd = s.isVarDeclaration())
-        {
-            auto t = vd.type;
-            if (vd.needThis())
-                t = t.addMod(this.mod);
-            return t;
-        }
-        if (auto fd = s.isFuncDeclaration())
-        {
-            fd = resolveFuncCall(Loc(), null, fd, null, this, null, 1);
-            if (!fd || fd.errors || !fd.functionSemantic())
-                return Type.terror;
+        //if (s.isTupleDeclaration())
+            //return null;
 
-            auto t = fd.type.nextOf();
-            if (!t) // issue 14185
-                return Type.terror;
-            t = t.substWildTo(mod == 0 ? MODmutable : mod);
-            return t;
-        }
-        if (auto d = s.isDeclaration())
-        {
-            assert(d.type);
-            return d.type;
-        }
-        if (auto ed = s.isEnumDeclaration())
-        {
-            return ed.type;
-        }
-        if (auto td = s.isTemplateDeclaration())
-        {
-            assert(td._scope);
-            auto fd = resolveFuncCall(Loc(), null, td, null, this, null, 1);
-            if (!fd || fd.errors || !fd.functionSemantic())
-                return Type.terror;
+        //if (auto vd = s.isVarDeclaration())
+        //{
+            //auto t = vd.type;
+            //if (vd.needThis())
+                //t = t.addMod(this.mod);
+            //return t;
+        //}
+        //if (auto fd = s.isFuncDeclaration())
+        //{
+            //fd = resolveFuncCall(Loc(), null, fd, null, this, null, 1);
+            //if (!fd || fd.errors || !fd.functionSemantic())
+                //return Type.terror;
 
-            auto t = fd.type.nextOf();
-            if (!t)
-                return Type.terror;
-            t = t.substWildTo(mod == 0 ? MODmutable : mod);
-            return t;
-        }
+            //auto t = fd.type.nextOf();
+            //if (!t) // issue 14185
+                //return Type.terror;
+            //t = t.substWildTo(mod == 0 ? MODmutable : mod);
+            //return t;
+        //}
+        //if (auto d = s.isDeclaration())
+        //{
+            //assert(d.type);
+            //return d.type;
+        //}
+        //if (auto ed = s.isEnumDeclaration())
+        //{
+            //return ed.type;
+        //}
+        //if (auto td = s.isTemplateDeclaration())
+        //{
+            //assert(td._scope);
+            //auto fd = resolveFuncCall(Loc(), null, td, null, this, null, 1);
+            //if (!fd || fd.errors || !fd.functionSemantic())
+                //return Type.terror;
+
+            //auto t = fd.type.nextOf();
+            //if (!t)
+                //return Type.terror;
+            //t = t.substWildTo(mod == 0 ? MODmutable : mod);
+            //return t;
+        //}
 
         //printf("%s\n", s.kind());
         return null;
@@ -2754,14 +2757,16 @@ extern (C++) abstract class Type : RootObject
 
             /* See if we should forward to the alias this.
              */
-            if (sym.aliasthis)
+            if (sym.aliasThisSymbols.dim > 0)
             {
                 /* Rewrite e.ident as:
                  *  e.aliasthis.ident
                  */
-                e = resolveAliasThis(sc, e, 0); // TODO
-                auto die = new DotIdExp(e.loc, e, ident);
-                return returnExp(die.semanticY(sc, flag & 1));
+                // TODO
+                //iterateAliasThis2(e, sym, sc, sym, &atSubstUnaDotId, &ident);
+                //e = resolveAliasThis(sc, e, 0); // TODO
+                //auto die = new DotIdExp(e.loc, e, ident);
+                //return returnExp(die.semanticY(sc, flag & 1));
             }
         }
         return returnExp(Type.dotExp(sc, e, ident, flag));
@@ -7686,7 +7691,7 @@ extern (C++) final class TypeStruct : Type
                 }
             }
         }
-        else if (sym.aliasthis && !(att & RECtracing))
+        else if (sym.aliasThisSymbols.dim > 0 && !(att & RECtracing))
         {
             if (auto ato = aliasthisOf())
             {
@@ -7718,7 +7723,7 @@ extern (C++) final class TypeStruct : Type
 
         ubyte wm = 0;
 
-        if (t.hasWild() && sym.aliasthis && !(att & RECtracing))
+        if (t.hasWild() && sym.aliasThisSymbols.dim > 0 && !(att & RECtracing))
         {
             if (auto ato = aliasthisOf())
             {
@@ -8498,7 +8503,7 @@ extern (C++) final class TypeClass : Type
         }
 
         m = MATCH.nomatch;
-        if (sym.aliasthis && !(att & RECtracing))
+        if (sym.aliasThisSymbols.dim > 0 && !(att & RECtracing))
         {
             if (auto ato = aliasthisOf())
             {
@@ -8541,7 +8546,7 @@ extern (C++) final class TypeClass : Type
 
         ubyte wm = 0;
 
-        if (t.hasWild() && sym.aliasthis && !(att & RECtracing))
+        if (t.hasWild() && sym.aliasThisSymbols.dim > 0 && !(att & RECtracing))
         {
             if (auto ato = aliasthisOf())
             {

@@ -1322,23 +1322,9 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                 Expression e = new IdentifierExp(ad.loc, Id.This);
                 //e = e.semantic(sc); TODO
 
-                Expressions results;
-                iterateAliasThis(sc, e, &atSubstIdent, cast(void*) exp.ident, results);
-
-                if (results.dim == 1)
-                {
-                    result = results[0];
-                    return;
-                }
-                else if (results.dim > 1)
-                {
-                    error(e.loc, "Unable to unambiguously resolve %s.%s Candidates:", e.toChars(), exp.ident.toChars());
-                    for (size_t j = 0; j < results.dim; ++j)
-                    {
-                        error(e.loc, "%s", results[j].toChars());
-                    }
-                    return;
-                }
+                // TODO
+                //if (iterateAliasThis2(result, e, sc, e, &atSubstIdent, cast(void*) exp.ident))
+                    //return;
             }
         }
 
@@ -6418,18 +6404,11 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
 
                 // No operator overloading member function found yet, but
                 // there might be an alias this to try.
-                if (ad.aliasthis && t1b != ae.att1)
-                {
-                    if (!ae.att1 && t1b.checkAliasThisRec())
-                        ae.att1 = t1b;
-
-                    /* Rewrite (a[arguments] op e2) as:
-                     *      a.aliasthis[arguments] op e2
-                     */
-                    ae.e1 = resolveAliasThis(sc, ae1save, true);
-                    if (ae.e1)
-                        continue;
-                }
+                /* Rewrite (a[arguments] op e2) as:
+                 *      a.aliasthis[arguments] op e2
+                 */
+                if (iterateAliasThis2(&result, ad, sc, ae1save, &atSubstBinUna, cast(void*) this))
+                    continue;
                 break;
             }
             ae.e1 = ae1old; // recovery
@@ -6831,15 +6810,15 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                 else // https://issues.dlang.org/show_bug.cgi?id=11355
                 {
                     AggregateDeclaration ad2 = isAggregate(e2x.type);
-                    if (ad2 && ad2.aliasthis && !(exp.att2 && e2x.type == exp.att2))
+                    // TODO
+                    Expression eTest;
+                    if (iterateAliasThis2(&eTest, exp, sc, exp.e2, &atSubstBinUna, cast(void*) this))
                     {
-                        if (!exp.att2 && exp.e2.type.checkAliasThisRec())
-                            exp.att2 = exp.e2.type;
                         /* Rewrite (e1 op e2) as:
                          *      (e1 op e2.aliasthis)
                          */
-                        exp.e2 = new DotIdExp(exp.e2.loc, exp.e2, ad2.aliasthis.ident);
-                        result = exp.expressionSemantic(sc);
+                        //exp.e2 = new DotIdExp(exp.e2.loc, eTest. ident);
+                        //result = exp.expressionSemantic(sc);
                         return;
                     }
                 }

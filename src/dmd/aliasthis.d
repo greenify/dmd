@@ -15,7 +15,6 @@ module dmd.aliasthis;
 import core.stdc.stdio;
 import dmd.aggregate;
 import dmd.arraytypes;
-import dmd.astbase;
 import dmd.dscope;
 import dmd.dsymbol;
 import dmd.errors;
@@ -585,16 +584,19 @@ extern (C++) Type aliasThisOf(Type t, size_t idx, bool* islvalue = null)
     return null;
 }
 
-extern (C++) bool iterateAliasThis2(F, Exp)(F f, Exp exp, Scope* sc, Expression e, IterateAliasThisDg dg, void* ctx)
+extern (C++) bool iterateAliasThis2(Exp)(Expression* result, Exp exp, Scope* sc, Expression e, IterateAliasThisDg dg, void* ctx)
 {
-    if (f.aliasthislock)
-        return false;
+    static if (__traits(compiles, f.aliasthislock))
+    {
+        if (f.aliasthislock)
+            return false;
+    }
 
     Expressions results;
     iterateAliasThis(sc, e, dg, ctx, results);
     if (results.dim == 1)
     {
-        *f = results[0];
+        *result = results[0];
         return true;
     }
     else if (results.dim > 1)
@@ -604,7 +606,7 @@ extern (C++) bool iterateAliasThis2(F, Exp)(F f, Exp exp, Scope* sc, Expression 
         {
             exp.error("%s", results[j].toChars());
         }
-        *f  = new ErrorExp();
+        *result  = new ErrorExp();
         return true;
     }
     return false;
