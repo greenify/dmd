@@ -6597,7 +6597,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                     if (!arg || !e.type.implicitConvTo(arg.type))
                     {
                         // expand initializer to tuple
-                        if (expandAliasThisTuples(iexps, u) != -1)
+                        if (expandAliasThisTuples(*iexps, u) != -1)
                         {
                             if (iexps.dim <= u)
                                 break;
@@ -8664,7 +8664,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
 
         // for static alias this: https://issues.dlang.org/show_bug.cgi?id=17684
         if (e2x.op == TOKtype)
-            e2x = resolveAliasThis(sc, e2x);
+            e2x = resolveAliasThis(sc, e2x, 0); // TODO
 
         e2x = resolveProperties(sc, e2x);
 

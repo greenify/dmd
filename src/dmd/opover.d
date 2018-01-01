@@ -513,6 +513,16 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                             result = result.trySemantic(sc);
                         else
                             result = result.expressionSemantic(sc);
+
+                        // TODO
+                        Expressions results;
+                        iterateAliasThis(sc, ae.e1, &atSubstBinUna, cast(void*) e, results);
+                        if (results.dim > 1)
+                        {
+                            result = results[0];
+                            return;
+                        }
+                        else if (results.dim > 1)
                         {
                             e.error("Unable to unambiguously resolve %s Candidates:", e.toChars());
                             for (size_t j = 0; j < results.dim; ++j)
@@ -549,11 +559,16 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                     // Didn't find it. Forward to aliasthis
                     if (!e.aliasthislock)
                     {
-                        e1 = e1.semantic(sc);
+                        // TODO
+                        //e.e1 = e.e1.semantic(sc);
                         Expressions results;
-                        iterateAliasThis(sc, e2, &atSubstBinRhsConv, cast(void*)this, &results);
+                        // TODO this was e.e2
+                        iterateAliasThis(sc, e.e1, &atSubstBinRhsConv, cast(void*) this, results);
                         if (results.dim == 1)
-                            return results[0];
+                        {
+                            result = results[0];
+                            return;
+                        }
                         else if (results.dim > 1)
                         {
                             e.error("Unable to unambiguously resolve %s Candidates:", e.toChars());
@@ -614,7 +629,7 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                      *      op(e1.aliasthis)
                      */
                     Expressions results;
-                    iterateAliasThis(sc, e.e1, &atSubstUna, cast(void*)e, &results);
+                    iterateAliasThis(sc, e.e1, &atSubstUna, cast(void*) e, results);
                     if (results.dim == 1)
                     {
                         result = results[0];
@@ -746,7 +761,7 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                      *      op(a.aliasthis[arguments])
                      */
                     Expressions results;
-                    iterateAliasThis(sc, ae.e1, &atSubstUna, cast(void*)ae, &results);
+                    iterateAliasThis(sc, ae.e1, &atSubstUna, cast(void*) ae, results);
                     if (results.dim == 1)
                     {
                         result = results[0];
@@ -809,7 +824,7 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                      *      op(e1.aliasthis)
                      */
                     Expressions results;
-                    iterateAliasThis(sc, e.e1, &atSubstUna, cast(void*)e, &results);
+                    iterateAliasThis(sc, e.e1, &atSubstUna, cast(void*)e, results);
                     if (results.dim == 1)
                     {
                         result = results[0];
@@ -1395,9 +1410,11 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                             result = result.trySemantic(sc);
                         else
                             result = result.expressionSemantic(sc);
+                    }
                     if (!e.aliasthislock)
+                    {
                         Expressions results;
-                        iterateAliasThis(sc, ae.e1, &atSubstBinUna, cast(void*)e, &results);
+                        iterateAliasThis(sc, ae.e1, &atSubstBinUna, cast(void*)e, results);
                         if (results.dim == 1)
                         {
                             result = results[0];
@@ -1445,7 +1462,7 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                     if (!e.aliasthislock)
                     {
                         Expressions results;
-                        iterateAliasThis(sc, se.e1, &atSubstBinUna, cast(void*)e, &results);
+                        iterateAliasThis(sc, e.e1, &atSubstBinUna, cast(void*) e, results);
                         if (results.dim == 1)
                         {
                             result = results[0];
@@ -1815,7 +1832,7 @@ extern (C++) bool inferAggregate(ForeachStatement fes, Scope* sc, ref Dsymbol sa
             if (!(aggr.type.aliasthislock & RECtracing))
             {
                 Expressions results;
-                iterateAliasThis(sc, aggr, &atSubstForeach, cast(void*)fes, &results);
+                iterateAliasThis(sc, aggr, &atSubstForeach, cast(void*) fes, results);
                 if (results.dim == 1)
                 {
                     aggr = results[0];
@@ -2093,14 +2110,14 @@ Lnomatch:
  * It tries to substitute subtyped expression to a lhs of a BinExp and apply all rhs subtypes to it.
  * bin(x, e) -> bin(x, e.aliasthis)
  */
-extern (C++) static bool atSubstBinBoth(Scope* sc, Expression e, void* ctx_, Expression* outexpr)
+extern (C++) static bool atSubstBinBoth(Scope* sc, Expression e, void* ctx_, Expression outexpr)
 {
     DoBothCtx* ctx = cast(DoBothCtx*)ctx_;
     BinExp be = ctx.be;
     be = cast(BinExp)be.copy();
     be.e1 = e;
     // e1.aliasthis op e2 => e1.aliasthis op e2.aliasthis
-    int ret = iterateAliasThis(sc, be.e2, &atSubstBinRhs, cast(void*)be, ctx.results);
+    int ret = iterateAliasThis(sc, be.e2, &atSubstBinRhs, cast(void*)be, *ctx.results);
     if (ret) //we don't need write to results: previous call have done it.
         return true;
     return false;
@@ -2112,7 +2129,7 @@ extern (C++) static bool atSubstBinBoth(Scope* sc, Expression e, void* ctx_, Exp
  * While it is working, it locks another term of the BinExp to prevent alias this resolving for it.
  * bin(x, e) -> bin(x, e.aliasthis)
  */
-extern (C++) static bool atSubstBinRhs(Scope* sc, Expression e, void* ctx, Expression* outexpr)
+extern (C++) static bool atSubstBinRhs(Scope* sc, Expression e, void* ctx, Expression outexpr)
 {
     BinExp be = cast(BinExp)(cast(BinExp)ctx).copy();
     be.e2 = e;
@@ -2125,7 +2142,7 @@ extern (C++) static bool atSubstBinRhs(Scope* sc, Expression e, void* ctx, Expre
     be.e1.type.aliasthislock = oldatlock1;
     if (eret)
     {
-        *outexpr = eret;
+        outexpr = eret;
         return true;
     }
     return false;
@@ -2136,7 +2153,7 @@ extern (C++) static bool atSubstBinRhs(Scope* sc, Expression e, void* ctx, Expre
  * It tries to substitute subtyped expression to a foreach statement.
  * foreach(...; e) -> foreach(...; e.aliasthis)
  */
-extern (C++) static bool atSubstForeach(Scope* sc, Expression e, void* ctx, Expression* outexpr)
+extern (C++) static bool atSubstForeach(Scope* sc, Expression e, void* ctx, Expression outexpr)
 {
     ForeachStatement fes = cast(ForeachStatement)ctx;
     fes.aggr = e;
@@ -2147,7 +2164,7 @@ extern (C++) static bool atSubstForeach(Scope* sc, Expression e, void* ctx, Expr
     e.type.aliasthislock = oldatlock;
     if (ret)
     {
-        *outexpr = e;
+        outexpr = e;
         return true;
     }
     return false;
@@ -2158,12 +2175,12 @@ extern (C++) void resloveAliasThisForBinExp(Scope* sc, BinExp be, bool check_lvl
     if (check_lvl)
     {
         // e1 op e2 => e1.aliasthis op e2
-        iterateAliasThis(sc, be.e1, &atSubstBinLhs, cast(void*)be, ret);
+        iterateAliasThis(sc, be.e1, &atSubstBinLhs, cast(void*)be, *ret);
     }
     if (check_rvl)
     {
         // e1 op e2 => e1 op e2.aliasthis
-        iterateAliasThis(sc, be.e2, &atSubstBinRhs, cast(void*)be, ret);
+        iterateAliasThis(sc, be.e2, &atSubstBinRhs, cast(void*)be, *ret);
     }
     if (ret.dim == 1)
     {
@@ -2187,7 +2204,7 @@ extern (C++) void resloveAliasThisForBinExp(Scope* sc, BinExp be, bool check_lvl
         DoBothCtx ctx;
         ctx.results = ret;
         ctx.be = be;
-        iterateAliasThis(sc, be.e1, &atSubstBinBoth, &ctx, ret);
+        iterateAliasThis(sc, be.e1, &atSubstBinBoth, &ctx, *ret);
     }
     if (ret.dim == 1)
     {
@@ -2213,7 +2230,7 @@ extern (C++) void resloveAliasThisForBinExp(Scope* sc, BinExp be, bool check_lvl
  * While it is working, it locks another term of the BinExp to prevent alias this resolving for it.
  * bin(e, x) -> bin(e.aliasthis, x)
  */
-extern (C++) static bool atSubstBinLhs(Scope* sc, Expression e, void* ctx, Expression* outexpr)
+extern (C++) static bool atSubstBinLhs(Scope* sc, Expression e, void* ctx, Expression outexpr)
 {
     BinExp be = cast(BinExp)(cast(BinExp)ctx).copy();
     be.e1 = e;
@@ -2224,7 +2241,7 @@ extern (C++) static bool atSubstBinLhs(Scope* sc, Expression e, void* ctx, Expre
     Expression eret = be.trySemantic(sc);
     if (eret)
     {
-        *outexpr = eret;
+        outexpr = eret;
         return true;
     }
     be.e2.type.aliasthislock = oldatlock2;
