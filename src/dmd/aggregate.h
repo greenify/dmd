@@ -110,7 +110,7 @@ public:
     // it would be stored in TypeInfo_Class.defaultConstructor
     CtorDeclaration *defaultCtor;
 
-    Dsymbol *aliasthis;         // forward unresolved lookups to aliasthis
+    Dsymbol *aliasThisSymbols;         // forward unresolved lookups to aliasthis
     bool noDefaultCtor;         // no default construction
 
     FuncDeclarations dtors;     // Array of destructors

@@ -68,4 +68,8 @@ typedef Array<class GotoStatement *> GotoStatements;
 
 typedef Array<class TemplateInstance *> TemplateInstances;
 
+typedef Array<bool> Bools;
+
+typedef Array<const char *> Strings;
+
 #endif

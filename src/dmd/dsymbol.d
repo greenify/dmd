@@ -1736,29 +1736,42 @@ extern (C++) final class WithScopeSymbol : ScopeDsymbol
             return null;
         // Acts as proxy to the with class declaration
         Dsymbol s = null;
-        Expression eold = null;
-        for (Expression e = withstate.exp; e != eold; e = resolveAliasThis(_scope, e))
+        Expression e = withstate.exp;
+        if (e.op == TOKscope)
         {
-            if (e.op == TOKscope)
-            {
-                s = (cast(ScopeExp)e).sds;
-            }
-            else if (e.op == TOKtype)
-            {
-                s = e.type.toDsymbol(null);
-            }
-            else
-            {
-                Type t = e.type.toBasetype();
-                s = t.toDsymbol(null);
-            }
+            s = (cast(ScopeExp)e).sds;
+        }
+        else if (e.op == TOKtype)
+        {
+            s = e.type.toDsymbol(null);
+        }
+        else
+        {
+            Type t = e.type.toBasetype();
+            s = t.toDsymbol(null);
+        }
+        if (s)
+        {
+            s = s.search(loc, ident, flags);
             if (s)
+                return s;
+        }
+        //try alias this-es
+        Dsymbols candidates;
+        Expressions results;
+        FindMemberCtx ctx = FindMemberCtx(loc, ident, flags, &candidates);
+        iterateAliasThis(_scope, e, &atSubstWithDotId, &ctx, &results);
+        if (candidates.dim == 1)
+        {
+            return candidates[0];
+        }
+        else if (candidates.dim > 1)
+        {
+            e.error("There are many candidates to %s.%s resolve:", e.toChars(), ident.toChars());
+            for (size_t j = 0; j < results.dim; ++j)
             {
-                s = s.search(loc, ident, flags);
-                if (s)
-                    return s;
+                e.error("%s", results[j].toChars());
             }
-            eold = e;
         }
         return null;
     }
@@ -2166,4 +2179,46 @@ extern (C++) final class DsymbolTable : RootObject
     {
         return cast(uint)dmd_aaLen(tab);
     }
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an DotIdExp inside an WithStatement.
+ * with(e) { ident } -> with(e) { aliasthisX.ident }
+ */
+extern (C++) static bool atSubstWithDotId(Scope* sc, Expression e, void* ctx_, Expression* outexpr)
+{
+    FindMemberCtx* ctx = cast(FindMemberCtx*)ctx_;
+    Dsymbol s = null;
+    if (e.op == TOKimport)
+    {
+        s = (cast(ScopeExp)e).sds;
+    }
+    else if (e.op == TOKtype)
+    {
+        s = e.type.toDsymbol(null);
+    }
+    else
+    {
+        Type t = e.type.toBasetype();
+        s = t.toDsymbol(null);
+    }
+    if (s)
+    {
+        s = s.search(ctx.loc, ctx.ident);
+        if (s)
+        {
+            ctx.candidates.push(s);
+            return true;
+        }
+    }
+    return false;
+}
+
+struct FindMemberCtx
+{
+    Loc loc;
+    Identifier ident;
+    int flags;
+    Dsymbols* candidates;
 }

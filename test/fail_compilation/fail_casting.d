@@ -144,6 +144,7 @@ void test14154()
     ubyte t = cast(MyUbyte14154)mi;
 }
 
+
 /*
 TEST_OUTPUT:
 ---

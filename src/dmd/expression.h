@@ -72,6 +72,9 @@ Expression *valueNoDtor(Expression *e);
 int modifyFieldVar(Loc loc, Scope *sc, VarDeclaration *var, Expression *e1);
 Expression *resolveAliasThis(Scope *sc, Expression *e, bool gag = false);
 Expression *doCopyOrMove(Scope *sc, Expression *e);
+typedef bool (*IterateAliasThisDg)(Scope *sc, Expression *aliasexpr, void *ctx, Expression **outexpr);
+bool iterateAliasThis(Scope *sc, Expression *e, IterateAliasThisDg dg,
+                      void *ctx, Expressions *ret, bool gagerrors = false, StringTable* syms = NULL);
 Expression *resolveOpDollar(Scope *sc, ArrayExp *ae, Expression **pe0);
 Expression *resolveOpDollar(Scope *sc, ArrayExp *ae, IntervalExp *ie, Expression **pe0);
 Expression *integralPromotions(Expression *e, Scope *sc);
@@ -105,6 +108,12 @@ Expression *inferType(Expression *e, Type *t, int flag = 0);
 Expression *semanticTraits(TraitsExp *e, Scope *sc);
 Type *getIndirection(Type *t);
 
+//replace op(e1) with op(e1.%aliasthis%)
+bool atSubstUna(Scope *sc, Expression *e, void *ctx, Expression **outexpr);
+//replace bin(una(e1), e2) with bin(una(e1.%aliasthis%), e2)
+bool atSubstBinUna(Scope *sc, Expression *e, void *ctx, Expression **outexpr);
+//replace una(una(e1)) with una(una(e1.%aliasthis%))
+bool atSubstUnaUna(Scope *sc, Expression *e, void *ctx, Expression **outexpr);
 Expression *checkGC(Scope *sc, Expression *e);
 
 /* Run CTFE on the expression, but allow the expression to be a TypeExp
@@ -132,6 +141,9 @@ public:
     unsigned char parens;       // if this is a parenthesized expression
 
     static void _init();
+    /* This field is used to prevent alias this resolving.
+     */
+    bool aliasthislock;
     Expression *copy();
     virtual Expression *syntaxCopy();
 
@@ -676,7 +688,6 @@ class UnaExp : public Expression
 {
 public:
     Expression *e1;
-    Type *att1; // Save alias this type to detect recursion
 
     Expression *syntaxCopy();
     Expression *incompatibleTypes();
@@ -693,9 +704,6 @@ class BinExp : public Expression
 public:
     Expression *e1;
     Expression *e2;
-
-    Type *att1; // Save alias this type to detect recursion
-    Type *att2; // Save alias this type to detect recursion
 
     Expression *syntaxCopy();
     Expression *incompatibleTypes();

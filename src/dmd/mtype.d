@@ -489,6 +489,10 @@ extern (C++) abstract class Type : RootObject
     MOD mod; // modifiers MODxxxx
     char* deco;
 
+    /* This field is a bit-mask of AliasThisRec values.
+     * It is used to prevent alias this resolving.
+     */
+    uint aliasthislock;
     /* These are cached values that are lazily evaluated by constOf(), immutableOf(), etc.
      * They should not be referenced by anybody but mtype.c.
      * They can be NULL if not lazily evaluated yet.
@@ -602,6 +606,7 @@ extern (C++) abstract class Type : RootObject
     final extern (D) this(TY ty)
     {
         this.ty = ty;
+        this.aliasthislock = RECinit;
     }
 
     const(char)* kind() const nothrow pure @nogc @safe
@@ -1247,10 +1252,7 @@ extern (C++) abstract class Type : RootObject
         t.swcto = null;
         t.vtinfo = null;
         t.ctype = null;
-        if (t.ty == Tstruct)
-            (cast(TypeStruct)t).att = RECfwdref;
-        if (t.ty == Tclass)
-            (cast(TypeClass)t).att = RECfwdref;
+        t.aliasthislock = RECinit;
         return t;
     }
 
@@ -2119,8 +2121,6 @@ extern (C++) abstract class Type : RootObject
         return t;
     }
 
-    final Type aliasthisOf()
-    {
         auto ad = isAggregate(this);
         if (!ad || !ad.aliasthis)
             return null;
@@ -2175,29 +2175,6 @@ extern (C++) abstract class Type : RootObject
         }
 
         //printf("%s\n", s.kind());
-        return null;
-    }
-
-    final bool checkAliasThisRec()
-    {
-        Type tb = toBasetype();
-        AliasThisRec* pflag;
-        if (tb.ty == Tstruct)
-            pflag = &(cast(TypeStruct)tb).att;
-        else if (tb.ty == Tclass)
-            pflag = &(cast(TypeClass)tb).att;
-        else
-            return false;
-
-        AliasThisRec flag = cast(AliasThisRec)(*pflag & RECtypeMask);
-        if (flag == RECfwdref)
-        {
-            Type att = aliasthisOf();
-            flag = att && att.implicitConvTo(this) ? RECyes : RECno;
-        }
-        *pflag = cast(AliasThisRec)(flag | (*pflag & ~RECtypeMask));
-        return flag == RECyes;
-    }
 
     Type makeConst()
     {
@@ -2721,6 +2698,11 @@ extern (C++) abstract class Type : RootObject
              */
             if (auto fd = search_function(sym, Id.opDispatch))
             {
+                if (sym.aliasThisSymbols && sym.aliasThisSymbols.dim)
+                {
+                    fd.error("Unable to mix alias this and opDispatch it a one struct or class.", fd.kind());
+                    return new ErrorExp();
+                }
                 /* Rewrite e.ident as:
                  *  e.opDispatch!("ident")
                  */
@@ -2746,17 +2728,26 @@ extern (C++) abstract class Type : RootObject
                     e = null;
                 return returnExp(e);
             }
-
-            /* See if we should forward to the alias this.
-             */
-            if (sym.aliasthis)
+            if (!(aliasthislock & RECtracing))
             {
-                /* Rewrite e.ident as:
-                 *  e.aliasthis.ident
+                /* See if we should forward to the alias this.
                  */
-                e = resolveAliasThis(sc, e);
-                auto die = new DotIdExp(e.loc, e, ident);
-                return returnExp(die.semanticY(sc, flag & 1));
+                FindDotIdCtx ctx = FindDotIdCtx(ident, flag);
+                Expressions results;
+                iterateAliasThis(sc, e, &atSubstDotId, &ctx, &results);
+                if (results.dim == 1)
+                {
+                    return results[0];
+                }
+                else if (results.dim > 1)
+                {
+                    e.error("There are many candidates to %s.%s resolve:", e.toChars(), ident.toChars());
+                    for (size_t j = 0; j < results.dim; ++j)
+                    {
+                        e.error("%s", results[j].toChars());
+                    }
+                    return new ErrorExp();
+                }
             }
         }
         return returnExp(Type.dotExp(sc, e, ident, flag));
@@ -6056,13 +6047,69 @@ extern (C++) final class TypeFunction : TypeNext
                     /* Find most derived alias this type being matched.
                      * https://issues.dlang.org/show_bug.cgi?id=15674
                      * Allow on both ref and out parameters.
-                     */
-                    while (1)
+                    if (ta.toBasetype().ty == Tclass || ta.toBasetype().ty == Tstruct)
                     {
-                        Type tat = ta.toBasetype().aliasthisOf();
-                        if (!tat || !tat.implicitConvTo(tprm))
-                            break;
-                        ta = tat;
+                        Types basetypes;
+                        Bools islvalues;
+                        Types results_exact;
+                        Types results_convert;
+                        bool last_exact_l_value = 0;
+                        bool last_convert_l_value = 0;
+                        getAliasThisTypes(arg.type, &basetypes, &islvalues);
+                        for (size_t i = 0; i < basetypes.dim; i++)
+                        {
+                            uint oldatlock = basetypes[i].aliasthislock;
+                            basetypes[i].aliasthislock |= RECtracing;
+                            MATCH mx = basetypes[i].implicitConvTo(tprm);
+                            basetypes[i].aliasthislock = oldatlock;
+                            if (mx == MATCHexact)
+                            {
+                                results_exact.push(basetypes[i]);
+                                last_exact_l_value = islvalues[i];
+                            }
+                            else if (mx != MATCHnomatch)
+                            {
+                                results_convert.push(basetypes[i]);
+                                last_convert_l_value = islvalues[i];
+                            }
+                        }
+                        if (results_exact.dim == 1)
+                        {
+                            if (p.storageClass & STCref && !last_exact_l_value)
+                            {
+                                goto Nomatch;
+                            }
+                            ta = results_exact[0];
+                        }
+                        else if (results_exact.dim > 1)
+                        {
+                            arg.error("Unable to unambiguously represent %s as %s; Candidates:", arg.type.toChars(), tprm.toChars());
+                            for (size_t j = 0; j < results_exact.dim; ++j)
+                            {
+                                arg.error("%s", results_exact[j].toChars());
+                            }
+                            goto Nomatch;
+                        }
+                        else
+                        {
+                            if (results_convert.dim == 1)
+                            {
+                                if (p.storageClass & STCref && !last_convert_l_value)
+                                {
+                                    goto Nomatch;
+                                }
+                                ta = results_convert[0];
+                            }
+                            else if (results_convert.dim > 1)
+                            {
+                                arg.error("Unable to unambiguously represent %s as %s; Candidates:", arg.type.toChars(), tprm.toChars());
+                                for (size_t j = 0; j < results_convert.dim; ++j)
+                                {
+                                    arg.error("%s", results_convert[j].toChars());
+                                }
+                                goto Nomatch;
+                            }
+                        }
                     }
 
                     /* A ref variable should work like a head-const reference.
@@ -7158,18 +7205,12 @@ extern (C++) final class TypeReturn : TypeQualified
 // Whether alias this dependency is recursive or not.
 enum AliasThisRec : int
 {
-    RECno           = 0,    // no alias this recursion
-    RECyes          = 1,    // alias this has recursive dependency
-    RECfwdref       = 2,    // not yet known
-    RECtypeMask     = 3,    // mask to read no/yes/fwdref
-    RECtracing      = 0x4,  // mark in progress of implicitConvTo/deduceWild
-    RECtracingDT    = 0x8,  // mark in progress of deduceType
+    RECinit = 0x0,
+    RECtracing = 0x1, // mark in progress of implicitConvTo/deduceWild
+    RECtracingDT = 0x2, // mark in progress of deduceType
 }
 
-alias RECno = AliasThisRec.RECno;
-alias RECyes = AliasThisRec.RECyes;
-alias RECfwdref = AliasThisRec.RECfwdref;
-alias RECtypeMask = AliasThisRec.RECtypeMask;
+alias RECinit = AliasThisRec.RECinit;
 alias RECtracing = AliasThisRec.RECtracing;
 alias RECtracingDT = AliasThisRec.RECtracingDT;
 
@@ -7178,7 +7219,6 @@ alias RECtracingDT = AliasThisRec.RECtracingDT;
 extern (C++) final class TypeStruct : Type
 {
     StructDeclaration sym;
-    AliasThisRec att = RECfwdref;
     CPPMANGLE cppmangle = CPPMANGLE.def;
 
     extern (D) this(StructDeclaration sym)
@@ -7681,19 +7721,27 @@ extern (C++) final class TypeStruct : Type
                 }
             }
         }
-        else if (sym.aliasthis && !(att & RECtracing))
+        else if (!(aliasthislock & RECtracing))
         {
-            if (auto ato = aliasthisOf())
+            Types candidates;
+            getAliasThisTypes(this, &candidates);
+            m = MATCHnomatch;
+            for (size_t i = 0; i < candidates.dim; i++)
             {
-                att = cast(AliasThisRec)(att | RECtracing);
-                m = ato.implicitConvTo(to);
-                att = cast(AliasThisRec)(att & ~RECtracing);
+                uint oldatlock = candidates[i].aliasthislock;
+                candidates[i].aliasthislock |= RECtracing;
+                MATCH m2 = candidates[i].implicitConvTo(to);
+                candidates[i].aliasthislock = oldatlock;
+                if (m2 > m)
+                {
+                    m = m2;
+                }
             }
-            else
-                m = MATCH.nomatch; // no match
         }
         else
-            m = MATCH.nomatch; // no match
+        {
+            m = MATCHnomatch; // no match
+        }
         return m;
     }
 
@@ -7712,14 +7760,18 @@ extern (C++) final class TypeStruct : Type
             return Type.deduceWild(t, isRef);
 
         ubyte wm = 0;
-
-        if (t.hasWild() && sym.aliasthis && !(att & RECtracing))
+        if (t.hasWild() && !(aliasthislock & RECtracing))
         {
-            if (auto ato = aliasthisOf())
+            Types candidates;
+            getAliasThisTypes(this, &candidates);
+            for (size_t i = 0; i < candidates.dim; i++)
             {
-                att = cast(AliasThisRec)(att | RECtracing);
-                wm = ato.deduceWild(t, isRef);
-                att = cast(AliasThisRec)(att & ~RECtracing);
+                uint oldatlock = candidates[i].aliasthislock;
+                candidates[i].aliasthislock |= RECtracing;
+                wm = candidates[i].deduceWild(t, isRef);
+                candidates[i].aliasthislock = oldatlock;
+                break;
+            }
             }
         }
 
@@ -7991,7 +8043,6 @@ extern (C++) final class TypeEnum : Type
 extern (C++) final class TypeClass : Type
 {
     ClassDeclaration sym;
-    AliasThisRec att = RECfwdref;
     CPPMANGLE cppmangle = CPPMANGLE.def;
 
     extern (D) this(ClassDeclaration sym)
@@ -8492,14 +8543,22 @@ extern (C++) final class TypeClass : Type
             }
         }
 
-        m = MATCH.nomatch;
-        if (sym.aliasthis && !(att & RECtracing))
+        if (!(aliasthislock & RECtracing))
         {
-            if (auto ato = aliasthisOf())
+            Types candidates;
+            getAliasThisTypes(this, &candidates);
+            m = MATCHnomatch;
+            for (size_t i = 0; i < candidates.dim; i++)
             {
-                att = cast(AliasThisRec)(att | RECtracing);
-                m = ato.implicitConvTo(to);
-                att = cast(AliasThisRec)(att & ~RECtracing);
+                uint oldatlock = candidates[i].aliasthislock;
+                candidates[i].aliasthislock |= RECtracing;
+                MATCH m2 = candidates[i].implicitConvTo(to);
+                candidates[i].aliasthislock = oldatlock;
+                if (m2 > m)
+                {
+                    m = m2;
+                }
+            }
             }
         }
 
@@ -8535,14 +8594,18 @@ extern (C++) final class TypeClass : Type
             return Type.deduceWild(t, isRef);
 
         ubyte wm = 0;
-
-        if (t.hasWild() && sym.aliasthis && !(att & RECtracing))
+        if (t.hasWild() && !(aliasthislock & RECtracing))
         {
-            if (auto ato = aliasthisOf())
+            Types candidates;
+            getAliasThisTypes(this, &candidates);
+            for (size_t i = 0; i < candidates.dim; i++)
             {
-                att = cast(AliasThisRec)(att | RECtracing);
-                wm = ato.deduceWild(t, isRef);
-                att = cast(AliasThisRec)(att & ~RECtracing);
+                uint oldatlock = candidates[i].aliasthislock;
+                candidates[i].aliasthislock |= RECtracing;
+                wm = candidates[i].deduceWild(t, isRef);
+                candidates[i].aliasthislock = oldatlock;
+                break;
+            }
             }
         }
 
@@ -9208,6 +9271,41 @@ extern (C++) final class Parameter : RootObject
 
     extern (D) static immutable bool[SR.max + 1][SR.max + 1] covariant = covariantInit();
 }
+
+}
+
+struct FindDotIdCtx
+{
+    Identifier ident;
+    int flag;
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an DotIdExp.
+ * e.ident -> e.aliasthisX.ident
+ */
+extern (C++) static bool atSubstDotId(Scope* sc, Expression e, void* ctx_, Expression* outexpr)
+{
+    FindDotIdCtx* ctx = cast(FindDotIdCtx*)ctx_;
+    /* Rewrite e.ident as:
+     *  e.aliasthis.ident
+     */
+    auto die = new DotIdExp(e.loc, e, ctx.ident);
+    uint errors = global.startGagging();
+    bool err = false;
+    uint oldatlock = e.type.aliasthislock;
+    e.type.aliasthislock |= RECtracing;
+    Expression eret = die.semanticY(sc, ctx.flag);
+    e.type.aliasthislock = oldatlock;
+    if (eret && eret.op == TOKerror)
+        err = true;
+    if (!global.endGagging(errors) && !err && eret)
+    {
+        *outexpr = eret;
+        return true;
+    }
+    return false;
 
 /**
  * For printing two types with qualification when necessary.
