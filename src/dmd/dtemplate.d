@@ -1642,24 +1642,26 @@ extern (C++) final class TemplateDeclaration : ScopeDsymbol
                     if (m == MATCH.nomatch)
                     {
                         AggregateDeclaration ad = isAggregate(farg.type);
-                        if (ad && ad.aliasthis && argtype != att)
+                        // TODO
+                        if (1)
+                        //if (!ad.aliasthislock)
                         {
                             if (!att && argtype.checkAliasThisRec())   // https://issues.dlang.org/show_bug.cgi?id=12537
                                 att = argtype;
 
                             Expressions results;
-                            iterateAliasThis(sc, farg, &atSubstCastTo, cast(void*)prmtype, &results, true);
-                            if (results.dim == 1)                            if (results.dim == 1)
+                            iterateAliasThis(sc, farg, &atSubstCastTo, cast(void*) prmtype, results, true);
+                            if (results.dim == 1)
                             /* If a semantic error occurs while doing alias this,
                              * eg purity(https://issues.dlang.org/show_bug.cgi?id=7295),
                              * just regard it as not a match.
                              */
-                            if (results.dim == 1) 
+                            if (results.dim == 1)
                             {
                                 farg = results[0];
                                 goto Lretry;
                             }
-                            else if (results.dim > 1)
+                            if (results.dim > 1)
                             {
                                 goto Lnomatch;
                             }
@@ -3427,7 +3429,7 @@ MATCH deduceType(Loc l, RootObject o, Scope* sc, Type tparam, TemplateParameters
                 {
                     m = implicitConvToWithAliasThis(loc, t, tparam);
                 }
-                if (m == MATCHnomatch)
+                if (m == MATCH.nomatch)
                 {
                     if (!(tparam.aliasthislock & RECtracingDT))
                     {
@@ -3440,12 +3442,11 @@ MATCH deduceType(Loc l, RootObject o, Scope* sc, Type tparam, TemplateParameters
                             tparam.aliasthislock |= RECtracingDT;
                             m = deduceType(loc, basetypes[i], sc, tparam, parameters, dedtypes, wm);
                             tparam.aliasthislock = oldatlock2;
-                            if (m != MATCHnomatch)
+                            if (m != MATCH.nomatch)
                             {
                                 //Ok, now test, is there only one way exists
                                 m = implicitConvToWithAliasThis(loc, t, basetypes[i]);
                                 break;
-                            }
                             }
                         }
                     }
@@ -4165,7 +4166,7 @@ MATCH deduceType(Loc l, RootObject o, Scope* sc, Type tparam, TemplateParameters
             // Now recursively test the inherited interfaces
             foreach (ref bi; b.baseInterfaces)
             {
-                deduceBaseClassParameters(loc, b.baseInterfaces[j], sc, tparam, parameters, dedtypes, best, numBaseClassMatches);
+                deduceBaseClassParameters(loc, bi, sc, tparam, parameters, dedtypes, best, numBaseClassMatches);
             }
         }
 
@@ -4485,7 +4486,7 @@ MATCH deduceType(Loc l, RootObject o, Scope* sc, Type tparam, TemplateParameters
                     auto el = (*e.elements)[i];
                     if (!el)
                         continue;
-                    MATCH m = deduceType(el, sc, tn, parameters, dedtypes, wm);
+                    MATCH m = deduceType(loc, el, sc, tn, parameters, dedtypes, wm);
                     if (m < result)
                         result = m;
                 }

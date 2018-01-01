@@ -523,12 +523,6 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                             return;
                         }
                     }
-                    e.aliasthislock = false;
-                        {
-                            result = Expression.combine(e0, result);
-                            return;
-                        }
-                    }
                 Lfallback:
                     if (maybeSlice && search_function(ad, Id.opSliceUnary))
                     {
@@ -555,16 +549,12 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                     // Didn't find it. Forward to aliasthis
                     if (!e.aliasthislock)
                     {
-                        if (!ae.att1 && t1b.checkAliasThisRec())
-                            ae.att1 = t1b;
-                        /* Rewrite op(a[arguments]) as:
-                         *      op(a.aliasthis[arguments])
-                         */
-                        ae.e1 = resolveAliasThis(sc, ae1save, true);
-                            continue;
-                            result = results[0];
-                        }
-                    break;
+                        e1 = e1.semantic(sc);
+                        Expressions results;
+                        iterateAliasThis(sc, e2, &atSubstBinRhsConv, cast(void*)this, &results);
+                        if (results.dim == 1)
+                            return results[0];
+                        else if (results.dim > 1)
                         {
                             e.error("Unable to unambiguously resolve %s Candidates:", e.toChars());
                             for (size_t j = 0; j < results.dim; ++j)
@@ -1090,7 +1080,6 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                 check_lvl = true;
             }
             if (!(e.op == TOKassign && ad1 && ad1 == ad2) && !e.aliasthislock)
-             * make sure that when we're copying the struct, we don't
             {
                 check_rvl = true;
             }
@@ -1421,14 +1410,6 @@ extern (C++) Expression op_overload(Expression e, Scope* sc)
                                 e.error("%s", results[j].toChars());
                             }
                             result = new ErrorExp();
-                            return;
-                        }
-                    }
-                    e.aliasthislock = false;
-                        {
-                        se.aliasthislock = ae.aliasthislock;
-                        se.aliasthislock = ae.aliasthislock;
-                            result = Expression.combine(e0, result);
                             return;
                         }
                     }

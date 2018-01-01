@@ -1760,7 +1760,7 @@ extern (C++) final class WithScopeSymbol : ScopeDsymbol
         Dsymbols candidates;
         Expressions results;
         FindMemberCtx ctx = FindMemberCtx(loc, ident, flags, &candidates);
-        iterateAliasThis(_scope, e, &atSubstWithDotId, &ctx, &results);
+        iterateAliasThis(_scope, e, &atSubstWithDotId, &ctx, results);
         if (candidates.dim == 1)
         {
             return candidates[0];
@@ -2186,7 +2186,7 @@ extern (C++) final class DsymbolTable : RootObject
  * It tries to substitute subtyped expression to an DotIdExp inside an WithStatement.
  * with(e) { ident } -> with(e) { aliasthisX.ident }
  */
-extern (C++) static bool atSubstWithDotId(Scope* sc, Expression e, void* ctx_, Expression* outexpr)
+extern (C++) static bool atSubstWithDotId(Scope* sc, Expression e, void* ctx_, Expression outexpr)
 {
     FindMemberCtx* ctx = cast(FindMemberCtx*)ctx_;
     Dsymbol s = null;

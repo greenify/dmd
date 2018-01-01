@@ -779,9 +779,11 @@ extern (C++) Expression resolveUFCS(Scope* sc, CallExp ce)
         }
         else
         {
-            if (Expression ey = die.semanticY(sc, 1))
-            {
-                if (ey.op == TOKerror)
+             auto oldatlock = t.aliasthislock;
+             t.aliasthislock |= RECtracing;
+             Expression ey = die.semanticY(sc, 1);
+             t.aliasthislock = oldatlock;
+             if (ey)
                     return ey;
                 ce.e1 = ey;
                 if (isDotOpDispatch(ey))
@@ -793,7 +795,26 @@ extern (C++) Expression resolveUFCS(Scope* sc, CallExp ce)
                     /* fall down to UFCS */
                 }
                 else
+                {
                     return null;
+                }
+            if (t.ty == Tclass || t.ty == Tstruct)
+            {
+                Expressions results;
+                iterateAliasThis(sc, eleft, &atSubstUnaDotId, cast(void*)ce, results);
+                if (results.dim == 1)
+                {
+                    return results[0];
+                }
+                else if (results.dim > 1)
+                {
+                    ce.error("Unable to unambiguously resolve %s Candidates:", ce.toChars());
+                    for (size_t j = 0; j < results.dim; ++j)
+                    {
+                        ce.error("%s", results[j].toChars());
+                    }
+                    return new ErrorExp();
+                }
             }
         }
         e = searchUFCS(sc, die, ident);
@@ -977,78 +998,6 @@ extern (C++) void expandTuples(Expressions* exps)
             }
         }
     }
-}
-
-/****************************************
- * Expand alias this tuples.
- */
-extern (C++) TupleDeclaration isAliasThisTuple(Expression e)
-{
-    if (!e.type)
-        return null;
-
-    Type t = e.type.toBasetype();
-Lagain:
-    if (Dsymbol s = t.toDsymbol(null))
-    {
-        AggregateDeclaration ad = s.isAggregateDeclaration();
-        if (ad)
-        {
-            s = ad.aliasthis;
-            if (s && s.isVarDeclaration())
-            {
-                TupleDeclaration td = s.isVarDeclaration().toAlias().isTupleDeclaration();
-                if (td && td.isexp)
-                    return td;
-            }
-            if (Type att = t.aliasthisOf())
-            {
-                t = att;
-                goto Lagain;
-            }
-        }
-    }
-    return null;
-}
-
-extern (C++) int expandAliasThisTuples(Expressions* exps, size_t starti = 0)
-{
-    if (!exps || exps.dim == 0)
-        return -1;
-
-    for (size_t u = starti; u < exps.dim; u++)
-    {
-        Expression exp = (*exps)[u];
-        TupleDeclaration td = isAliasThisTuple(exp);
-        if (td)
-        {
-            exps.remove(u);
-            for (size_t i = 0; i < td.objects.dim; ++i)
-            {
-                Expression e = isExpression((*td.objects)[i]);
-                assert(e);
-                assert(e.op == TOKdsymbol);
-                DsymbolExp se = cast(DsymbolExp)e;
-                Declaration d = se.s.isDeclaration();
-                assert(d);
-                e = new DotVarExp(exp.loc, exp, d);
-                assert(d.type);
-                e.type = d.type;
-                exps.insert(u + i, e);
-            }
-            version (none)
-            {
-                printf("expansion ->\n");
-                for (size_t i = 0; i < exps.dim; ++i)
-                {
-                    Expression e = (*exps)[i];
-                    printf("\texps[%d] e = %s %s\n", i, Token.tochars[e.op], e.toChars());
-                }
-            }
-            return cast(int)u;
-        }
-    }
-    return -1;
 }
 
 /****************************************
@@ -1535,6 +1484,10 @@ extern (C++) abstract class Expression : RootObject
     TOK op;         // to minimize use of dynamic_cast
     ubyte size;     // # of bytes in Expression so we can copy() it
     ubyte parens;   // if this is a parenthesized expression
+
+    /* This field is used to prevent alias this resolving.
+     */
+    bool aliasthislock;
 
     final extern (D) this(Loc loc, TOK op, int size)
     {
@@ -2344,14 +2297,24 @@ extern (C++) abstract class Expression : RootObject
             }
 
             // Forward to aliasthis.
-            if (ad.aliasthis && tb != att)
+            if (!(tb.aliasthislock & RECtracing))
             {
-                if (!att && tb.checkAliasThisRec())
-                    att = tb;
-                e = resolveAliasThis(sc, e);
-                t = e.type;
-                tb = e.type.toBasetype();
-                goto Lagain;
+                Expressions results;
+                iterateAliasThis(sc, e, &atSubstUnaDotId, null, results);
+                if(1) {
+                    t = e.type;
+                    tb = e.type.toBasetype();
+                    goto Lagain;
+                }
+                else if (results.dim > 1)
+                {
+                    e.error("Unable to represent %s as bool. Candidates:", e.toChars());
+                    for (size_t j = 0; j < results.dim; ++j)
+                    {
+                        e.error("%s", results[j].toChars());
+                    }
+                    return new ErrorExp();
+                }
             }
         }
 
@@ -2444,6 +2407,31 @@ extern (C++) abstract class Expression : RootObject
     {
         v.visit(this);
     }
+}
+
+
+/**
+ * Should be called by iterateAliasThis
+ * It tries to cast subtyped expression to a bool value.
+ */
+bool atSubstCastToBool(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    // TODO: ctx
+    uint errors = global.startGagging();
+    bool err = false;
+    Type etb = e.type.toBasetype();
+    uint oldatlock = etb.aliasthislock;
+    etb.aliasthislock |= RECtracing;
+    Expression eret = e.toBoolean(sc);
+    etb.aliasthislock = oldatlock;
+    if (eret && eret.op == TOKerror)
+        err = true;
+    if (!global.endGagging(errors) && !err)
+    {
+        outexpr = eret;
+        return true;
+    }
+    return false;
 }
 
 /***********************************************************
@@ -2812,6 +2800,24 @@ extern (C++) class IdentifierExp : Expression
     {
         v.visit(this);
     }
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to create DotIdExp from subtyped expression.
+ * una(e) -> una(e.aliasthisX)
+ */
+static bool atSubstIdent(Scope* sc, Expression e, void *ctx, Expression outexpr)
+{
+    Identifier ident = cast(Identifier) ctx; // TODO
+    Expression e1 = new DotIdExp(e.loc, e, ident);
+    e1 = e1.trySemantic(sc);
+    if (e1)
+    {
+        outexpr = e1;
+        return true;
+    }
+    return false;
 }
 
 /***********************************************************
@@ -4728,6 +4734,7 @@ extern (C++) class UnaExp : Expression
     {
         super(loc, op, size);
         this.e1 = e1;
+        this.aliasthislock = false;
     }
 
     override Expression syntaxCopy()
@@ -7196,4 +7203,364 @@ extern (C++) final class PrettyFuncInitExp : DefaultInitExp
     {
         v.visit(this);
     }
+}
+
+extern (C++) alias IterateAliasThisDg = bool function(Scope* sc, Expression aliasexpr, void* ctx, Expression outexpr);
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an UnaExp.
+ * una(e) -> una(e.aliasthisX)
+ */
+extern (C++) bool atSubstUna(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    UnaExp e1 = cast(UnaExp)(cast(UnaExp)ctx).copy();
+    e1.aliasthislock = true;
+    e1.e1 = e; //replace op(e1) with op(e1.%aliasthis%)
+    Expression e2 = e1.trySemantic(sc);
+    if (e2)
+    {
+        outexpr = e2;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an UnaExp inside a BinExp.
+ * bin(una(e), x) -> bin(una(e.aliasthisX), x)
+ */
+extern (C++) bool atSubstBinUna(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    BinExp e1 = cast(BinExp)(cast(BinExp)ctx).copy();
+    UnaExp ae1 = cast(UnaExp)e1.e1;
+    ae1 = cast(UnaExp)ae1.copy();
+    e1.aliasthislock = true;
+    ae1.e1 = e; //replace bin(una(e1), ...) with bin(una(e1.%aliasthis%), ...)
+    e1.e1 = ae1;
+    ae1.aliasthislock = true;
+    Expression e2 = e1.trySemantic(sc);
+    if (e2)
+    {
+        outexpr = e2;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Issue 11355:
+ * Should be called by iterateAliasThis.
+ * It substitutes subtyped expression to an rhs of a BinExp, if it converts to the lhs type.
+ * bin(x, e) -> bin(x, e.aliasthisX))
+ */
+extern (C++) bool atSubstBinRhsConv(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    BinExp e1 = cast(BinExp)(cast(BinExp)ctx).copy();
+    // TODO
+    //e1.e2 = e.semantic(sc);
+    assert(e1.e1.type);
+    assert(e1.e2.type);
+    uint oldatlock1 = e1.e1.type.aliasthislock;
+    uint oldatlock2 = e1.e2.type.aliasthislock;
+    e1.e1.type.aliasthislock |= RECtracing;
+    e1.e2.type.aliasthislock |= RECtracing;
+    MATCH conv = e1.e1.type.implicitConvTo(e1.e2.type);
+    e1.e2.type.aliasthislock = oldatlock2;
+    e1.e1.type.aliasthislock = oldatlock1;
+    if (conv != MATCH.nomatch)
+    {
+        // TODO
+        //outexpr = e1.semantic(sc);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an UnaExp inside an UnaExp.
+ * una(una(e)) -> una(una(e.aliasthisX))
+ */
+extern (C++) bool atSubstUnaUna(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    UnaExp ue = cast(UnaExp)(cast(UnaExp)ctx).copy();
+    UnaExp ae = cast(UnaExp)ue.e1.copy();
+    ue.aliasthislock = true;
+    ae.e1 = e;
+    ue.e1 = ae;
+    Expression e2 = ue.trySemantic(sc);
+    if (e2)
+    {
+        outexpr = e2;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute subtyped expression to an DotIdExp inside an UnaExp.
+ * una(e.ident) -> una(e.aliasthisX.ident)
+ */
+extern (C++) bool atSubstUnaDotId(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    UnaExp ue = cast(UnaExp)(cast(UnaExp)ctx).copy();
+    assert(ue.e1.op == TOKdot);
+    DotIdExp die = cast(DotIdExp)ue.e1.copy();
+    ue.aliasthislock = true;
+    die.e1 = e;
+    Expression ey = die.semanticY(sc, 1);
+    if (!ey)
+        return false;
+    ue.e1 = ey;
+    Expression e2 = ue.trySemantic(sc);
+    if (e2)
+    {
+        outexpr = e2;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Tries to find common subtypes of pe1 and pe2 using alias this mechanism.
+ * Argument purposes are similar to `typeMerge` arguments.
+ * Returns true if exactly one common subtype has been found. Otherwise reutrns false.
+ * If exactly one common subtype has been found then pe1 and pe2 are set to the
+ * new expressions, pt is set to the common subtype.
+ */
+extern (C++) bool mergeAliasThis(Scope* sc, Type pt, TOK op, Expression pe1, Expression pe2)
+{
+    //printf("merge aliasthis: (%s) and (%s)\n", pe1.toChars(), pe2.toChars());
+    assert(pe1 !is null);
+    assert(pe2 !is null);
+    Expression e1 = pe1;
+    Expression e2 = pe2;
+    AggregateDeclaration ag1 = null;
+    AggregateDeclaration ag2 = null;
+    Type t1b = e1.type.toBasetype();
+    Type t2b = e2.type.toBasetype();
+    if (t1b.ty == Tclass)
+    {
+        ag1 = (cast(TypeClass)t1b).sym;
+    }
+    else if (t1b.ty == Tstruct)
+    {
+        ag1 = (cast(TypeStruct)t1b).sym;
+    }
+    if (t2b.ty == Tclass)
+    {
+        ag2 = (cast(TypeClass)t2b).sym;
+    }
+    else if (t2b.ty == Tstruct)
+    {
+        ag2 = (cast(TypeStruct)t2b).sym;
+    }
+    assert(ag1 || ag2);
+    Expressions candidates1;
+    Expressions candidates2;
+    if (ag1)
+        findAliasThisSubtypes(sc, e1, candidates1);
+    if (ag2)
+        findAliasThisSubtypes(sc, e2, candidates2);
+    Expressions candidates1ret;
+    Expressions candidates2ret;
+    // try to merge e1.aliasthis and e2
+    if (candidates1.dim)
+    {
+        for (size_t i = 0; i < candidates1.dim; i++)
+        {
+            uint oldatlock1 = candidates1[i].type.aliasthislock;
+            uint oldatlock2 = e2.type.aliasthislock;
+            candidates1[i].type.aliasthislock |= RECtracing;
+            e2.type.aliasthislock |= RECtracing;
+            if (typeMerge(sc, op, &pt, &candidates1[i], &e2, false))
+            {
+                candidates1ret.push(candidates1[i]);
+                candidates2ret.push(e2);
+            }
+            e2.type.aliasthislock = oldatlock2;
+            candidates1[i].type.aliasthislock = oldatlock1;
+        }
+    }
+    // try to merge e1 and e2.aliasthis
+    if (candidates2.dim)
+    {
+        for (size_t i = 0; i < candidates2.dim; i++)
+        {
+            uint oldatlock1 = e1.type.aliasthislock;
+            uint oldatlock2 = candidates2[i].type.aliasthislock;
+            e1.type.aliasthislock |= RECtracing;
+            candidates2[i].type.aliasthislock |= RECtracing;
+            if (typeMerge(sc, op, &pt, &e1, &candidates2[i], false))
+            {
+                candidates1ret.push(e1);
+                candidates2ret.push(candidates2[i]);
+            }
+            candidates2[i].type.aliasthislock = oldatlock2;
+            e1.type.aliasthislock = oldatlock1;
+        }
+    }
+    assert(candidates1ret.dim == candidates2ret.dim);
+    if (candidates1ret.dim == 1)
+    {
+        pe1 = candidates1ret[0];
+        pe2 = candidates2ret[0];
+        pt = candidates1ret[0].type;
+        return true;
+    }
+    else if (candidates1ret.dim > 1)
+    {
+        e1.error("unable to determine common type for (%s) and (%s); candidates:", pe1.toChars(), pe2.toChars());
+        for (size_t i = 0; i < candidates1ret.dim; i++)
+        {
+            e1.error("(%s) and (%s)", candidates1ret[i].toChars(), candidates2ret[i].toChars());
+        }
+        return false;
+    }
+    // try to merge e1.aliasthis and e2.aliasthis
+    for (size_t i = 0; i < candidates1.dim; i++)
+    {
+        for (size_t j = 0; j < candidates2.dim; j++)
+        {
+            uint oldatlock1 = candidates1[i].type.aliasthislock;
+            uint oldatlock2 = candidates2[i].type.aliasthislock;
+            candidates1[i].type.aliasthislock |= RECtracing;
+            candidates2[i].type.aliasthislock |= RECtracing;
+            if (typeMerge(sc, op, &pt, &candidates1[i], &candidates2[j], false))
+            {
+                candidates1ret.push(candidates1[i]);
+                candidates2ret.push(candidates2[j]);
+            }
+            candidates2[i].type.aliasthislock = oldatlock2;
+            candidates1[i].type.aliasthislock = oldatlock1;
+        }
+    }
+    assert(candidates1ret.dim == candidates2ret.dim);
+    if (candidates1ret.dim == 0)
+    {
+        return false;
+    }
+    else if (candidates1ret.dim == 1)
+    {
+        pe1 = candidates1ret[0];
+        pe2 = candidates2ret[0];
+        pt = candidates1ret[0].type;
+        return true;
+    }
+    else
+    {
+        e1.error("unable to determine common type for (%s) and (%s); candidates:", pe1.toChars(), pe2.toChars());
+        for (size_t i = 0; i < candidates1ret.dim; i++)
+        {
+            e1.error("(%s) and (%s)", candidates1ret[i].toChars(), candidates2ret[i].toChars());
+        }
+        return false;
+    }
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It is needed to collect of subtypes of the expression type.
+ * It checks if type hasn't been found and writes it to `outexpr` if yes.
+ * atCollectSubtypes always returns false, because we should collect all matching types
+ * and don't want to break walk if one type is found.
+ */
+extern (C++) static bool atCollectSubtypes(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    // TODO
+    Expressions* candidates = cast(Expressions*) ctx;
+    assert(e.type);
+    for (size_t j = 0; j < candidates.dim; ++j)
+    {
+        if ((*candidates)[j].type.equals(e.type))
+        {
+            return false;
+        }
+    }
+    outexpr = e;
+    return false;
+}
+
+/* ==================== castTo ====================== */
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to substitute a next subtype expression and check
+ * if it convertable to the target type.
+ * Returns true if the exactly matching has been found.
+ * Otherwise returns false.
+ */
+extern (C++) bool atSubstCastTo(Scope* sc, Expression e, void* ctx, Expression outexpr)
+{
+    Type t = cast(Type) ctx; // TODO
+    uint oldatt = e.type.aliasthislock;
+    e.type.aliasthislock |= RECtracing;
+    MATCH m = e.type.implicitConvTo(t);
+    e.type.aliasthislock = oldatt;
+    if (m == MATCH.exact)
+    {
+        outexpr = e;
+        return true;
+    }
+    else if (m != MATCH.nomatch)
+    {
+        outexpr = e;
+        return false;
+    }
+    return false;
+}
+
+/**
+ * Collects all alias this subtypes of e and returns array of subtypes through
+ * `candidates` array.
+ */
+extern (C++) void findAliasThisSubtypes(Scope* sc, Expression e, ref Expressions candidates)
+{
+    if (e.type.ty == Tstruct || e.type.ty == Tclass)
+    {
+        iterateAliasThis(sc, e, &atCollectSubtypes, cast(void*)&candidates, candidates);
+    }
+}
+
+/**
+ * Should be called by iterateAliasThis.
+ * It tries to create DotIdExp from subtyped expression.
+ * una(e) -> una(e.aliasthisX)
+ */
+extern (C++) static bool atSubstIdent(Scope* sc, Expression e, void* ctx, Expression* outexpr)
+{
+    Identifier ident = cast(Identifier)ctx;
+    Expression e1 = new DotIdExp(e.loc, e, ident);
+    e1 = e1.trySemantic(sc);
+    if (e1)
+    {
+        *outexpr = e1;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Should be called by iterateAliasThis
+ * It tries to cast subtyped expression to a bool value.
+ */
+extern (C++) static bool atSubstCastToBool(Scope* sc, Expression e, void* ctx, Expression* outexpr)
+{
+    uint errors = global.startGagging();
+    bool err = false;
+    Type etb = e.type.toBasetype();
+    uint oldatlock = etb.aliasthislock;
+    etb.aliasthislock |= RECtracing;
+    Expression eret = e.toBoolean(sc);
+    etb.aliasthislock = oldatlock;
+    if (eret && eret.op == TOKerror)
+        err = true;
+    if (!global.endGagging(errors) && !err)
+    {
+        *outexpr = eret;
+        return true;
+    }
+    return false;
 }

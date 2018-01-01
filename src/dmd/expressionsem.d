@@ -1330,6 +1330,28 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                     return;
                 }
             }
+            if (ad)
+            {
+                Expression *e = new IdentifierExp(ad.loc, Id.This);
+                e = e.semantic(sc);
+
+                Expressions results;
+                iterateAliasThis(sc, e, &atSubstIdent, cast(void*) ident, results);
+
+                if (results.dim == 1)
+                {
+                    return results[0];
+                }
+                else if (results.dim > 1)
+                {
+                    error(e.loc, "Unable to unambiguously resolve %s.%s Candidates:", e.toChars(), ident.toChars());
+                    for (size_t j = 0; j < results.dim; ++j)
+                    {
+                        error(e.loc, "%s", results[j].toChars());
+                    }
+                    return new ErrorExp();
+                }
+            }
         }
 
         if (exp.ident == Id.ctfe)
@@ -3022,7 +3044,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                     {
                         if (!exp.att1 && exp.e1.type.checkAliasThisRec())
                             exp.att1 = exp.e1.type;
-                        exp.e1 = resolveAliasThis(sc, exp.e1);
+                        exp.e1 = resolveAliasThis(sc, exp.e1, 0); // TODO
                         goto Lagain;
                     }
                     exp.error("%s %s does not overload ()", sd.kind(), sd.toChars());
@@ -4013,10 +4035,18 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
 
             if (e.tok == TOKcolon)
             {
-                if (e.targ.implicitConvTo(e.tspec))
+                //ignore alias this while scanning
+                unsigned oldatlock = targ.aliasthislock;
+                targ.aliasthislock |= RECtracing;
+                MATCH m = targ.implicitConvTo(tspec);
+                targ.aliasthislock = oldatlock;
+                if (m)
                     goto Lyes;
-                else
-                    goto Lno;
+
+                m = implicitConvToWithAliasThis(loc, targ, tspec);
+                if (m)
+                    goto Lyes;
+                goto Lno;
             }
             else /* == */
             {
@@ -4044,7 +4074,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             dedtypes.setDim(e.parameters.dim);
             dedtypes.zero();
 
-            MATCH m = deduceType(e.targ, sc, e.tspec, e.parameters, &dedtypes);
+            MATCH m = deduceType(loc, e.targ, sc, e.tspec, e.parameters, &dedtypes);
             //printf("targ: %s\n", targ.toChars());
             //printf("tspec: %s\n", tspec.toChars());
             if (m <= MATCH.nomatch || (m != MATCH.exact && e.tok == TOKequal))

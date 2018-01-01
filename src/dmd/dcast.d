@@ -1495,9 +1495,14 @@ extern (C++) Expression castTo(Expression e, Scope* sc, Type t)
             if (AggregateDeclaration t1ad = isAggregate(t1b))
             {
                 AggregateDeclaration toad = isAggregate(tob);
-                if (t1ad != toad && t1ad.aliasthis)
+                if (t1ad != toad)
                 {
-                    if (t1b.ty == Tclass && tob.ty == Tclass)
+                    bool tryaliasthis = true;
+                    if (tob.ty == Tstruct && (cast(TypeStruct*)t1b).sym == (cast(TypeStruct*)tob).sym)
+                    {
+                        tryaliasthis = false;
+                    }
+                    else if (t1b.ty == Tclass && tob.ty == Tclass)
                     {
                         ClassDeclaration t1cd = t1b.isClassHandle();
                         ClassDeclaration tocd = tob.isClassHandle();
@@ -1505,13 +1510,27 @@ extern (C++) Expression castTo(Expression e, Scope* sc, Type t)
                         if (tocd.isBaseOf(t1cd, &offset))
                             goto Lok;
                     }
-
-                    /* Forward the cast to our alias this member, rewrite to:
-                     *   cast(to)e1.aliasthis
-                     */
-                    result = resolveAliasThis(sc, e);
-                    result = result.castTo(sc, t);
-                    return;
+                    if (tryaliasthis)
+                    {
+                        Expressions results;
+                        iterateAliasThis(sc, e, &atSubstCastTo, cast(void*)t, results);
+                        if (results.dim == 1)
+                        {
+                            results[0] = results[0].castTo(sc, t);
+                            result = results[0];
+                            return;
+                        }
+                        else if (results.dim > 1)
+                        {
+                            e.error("There are many candidates for cast %s to %s:", e.toChars(), t.toChars());
+                            for (size_t j = 0; j < results.dim; ++j)
+                            {
+                                e.error("%s", results[j].toChars());
+                            }
+                            result = new ErrorExp();
+                            return;
+                        }
+                    }
                 }
             }
             else if (tob.ty == Tvector && t1b.ty != Tvector)
@@ -2680,7 +2699,7 @@ private bool isVoidArrayLiteral(Expression e, Type other)
  *      true    success
  *      false   failed
  */
-extern (C++) bool typeMerge(Scope* sc, TOK op, Type* pt, Expression* pe1, Expression* pe2)
+extern (C++) bool typeMerge(Scope* sc, TOK op, Type* pt, Expression* pe1, Expression* pe2, bool checkaliastthis)
 {
     //printf("typeMerge() %s op %s\n", pe1.toChars(), pe2.toChars());
 
@@ -3024,127 +3043,100 @@ Lagain:
                     t1 = cd1.type;
                 else if (cd2)
                     t2 = cd2.type;
+                else if (checkaliastthis)
+                {
+                    Expression te1 = e1;
+                    Expression te2 = e2;
+                    auto tt1 = t;
+                    int r = mergeAliasThis(sc, tt1, op, te1, te2);
+                    if (r)
+                    {
+                        e1 = te1;
+                        e2 = te2;
+                        t1 = e1.type;
+                        t2 = e2.type;
+                        t = tt1;
+                    }
+                    else
+                    {
+                        goto Lincompatible;
+                    }
+                }
                 else
+                {
                     goto Lincompatible;
+                }
             }
-            else if (t1.ty == Tstruct && (cast(TypeStruct)t1).sym.aliasthis)
+            else if ((t1.ty == Tstruct || t1.ty == Tclass) && checkaliastthis)
             {
-                if (att1 && e1.type == att1)
+                Expression te1 = e1;
+                Expression te2 = e2;
+                Type tt1 = *pt;
+                int r = mergeAliasThis(sc, tt1, op, te1, te2);
+                if (r)
+                {
+                    e1 = te1;
+                    e2 = te2;
+                    t1 = e1.type;
+                    t2 = e2.type;
+                }
+                else
+                {
                     goto Lincompatible;
-                if (!att1 && e1.type.checkAliasThisRec())
-                    att1 = e1.type;
-                //printf("att tmerge(c || c) e1 = %s\n", e1.type.toChars());
-                e1 = resolveAliasThis(sc, e1);
-                t1 = e1.type;
-                continue;
+                }
             }
-            else if (t2.ty == Tstruct && (cast(TypeStruct)t2).sym.aliasthis)
+            else if ((t2.ty == Tstruct || t2.ty == Tclass) && checkaliastthis)
             {
-                if (att2 && e2.type == att2)
+                Expression te1 = e1;
+                Expression te2 = e2;
+                Type tt1 = *pt;
+                int r = mergeAliasThis(sc, tt1, op, te1, te2);
+                if (r)
+                {
+                    e1 = te1;
+                    e2 = te2;
+                    t1 = e1.type;
+                    t2 = e2.type;
+                }
+                else
+                {
                     goto Lincompatible;
-                if (!att2 && e2.type.checkAliasThisRec())
-                    att2 = e2.type;
-                //printf("att tmerge(c || c) e2 = %s\n", e2.type.toChars());
-                e2 = resolveAliasThis(sc, e2);
-                t2 = e2.type;
-                continue;
+                }
             }
             else
                 goto Lincompatible;
         }
     }
-    else if (t1.ty == Tstruct && t2.ty == Tstruct)
-    {
-        if (t1.mod != t2.mod)
-        {
-            if (!t1.isImmutable() && !t2.isImmutable() && t1.isShared() != t2.isShared())
-                goto Lincompatible;
-            ubyte mod = MODmerge(t1.mod, t2.mod);
-            t1 = t1.castMod(mod);
-            t2 = t2.castMod(mod);
-            t = t1;
-            goto Lagain;
-        }
-
-        TypeStruct ts1 = cast(TypeStruct)t1;
-        TypeStruct ts2 = cast(TypeStruct)t2;
-        if (ts1.sym != ts2.sym)
-        {
-            if (!ts1.sym.aliasthis && !ts2.sym.aliasthis)
-                goto Lincompatible;
-
-            MATCH i1 = MATCH.nomatch;
-            MATCH i2 = MATCH.nomatch;
-
-            Expression e1b = null;
-            Expression e2b = null;
-            if (ts2.sym.aliasthis)
-            {
-                if (att2 && e2.type == att2)
-                    goto Lincompatible;
-                if (!att2 && e2.type.checkAliasThisRec())
-                    att2 = e2.type;
-                //printf("att tmerge(s && s) e2 = %s\n", e2.type.toChars());
-                e2b = resolveAliasThis(sc, e2);
-                i1 = e2b.implicitConvTo(t1);
-            }
-            if (ts1.sym.aliasthis)
-            {
-                if (att1 && e1.type == att1)
-                    goto Lincompatible;
-                if (!att1 && e1.type.checkAliasThisRec())
-                    att1 = e1.type;
-                //printf("att tmerge(s && s) e1 = %s\n", e1.type.toChars());
-                e1b = resolveAliasThis(sc, e1);
-                i2 = e1b.implicitConvTo(t2);
-            }
-            if (i1 && i2)
-                goto Lincompatible;
-
-            if (i1)
-                goto Lt1;
-            else if (i2)
-                goto Lt2;
-
-            if (e1b)
-            {
-                e1 = e1b;
-                t1 = e1b.type.toBasetype();
-            }
-            if (e2b)
-            {
-                e2 = e2b;
-                t2 = e2b.type.toBasetype();
-            }
-            t = t1;
-            goto Lagain;
-        }
-    }
     else if (t1.ty == Tstruct || t2.ty == Tstruct)
     {
-        if (t1.ty == Tstruct && (cast(TypeStruct)t1).sym.aliasthis)
+        if (t1.ty == Tstruct && t2.ty == Tstruct)
         {
-            if (att1 && e1.type == att1)
-                goto Lincompatible;
-            if (!att1 && e1.type.checkAliasThisRec())
-                att1 = e1.type;
-            //printf("att tmerge(s || s) e1 = %s\n", e1.type.toChars());
-            e1 = resolveAliasThis(sc, e1);
-            t1 = e1.type;
-            t = t1;
-            goto Lagain;
+            if (t1.mod != t2.mod)
+            {
+                if (!t1.isImmutable() && !t2.isImmutable() && t1.isShared() != t2.isShared())
+	                goto Lincompatible;
+                char mod = MODmerge(t1.mod, t2.mod);
+                t1 = t1.castMod(mod);
+                t2 = t2.castMod(mod);
+                t = t1;
+                goto Lagain;
+            }
         }
-        if (t2.ty == Tstruct && (cast(TypeStruct)t2).sym.aliasthis)
+        if (checkaliastthis)
         {
-            if (att2 && e2.type == att2)
-                goto Lincompatible;
-            if (!att2 && e2.type.checkAliasThisRec())
-                att2 = e2.type;
-            //printf("att tmerge(s || s) e2 = %s\n", e2.type.toChars());
-            e2 = resolveAliasThis(sc, e2);
-            t2 = e2.type;
-            t = t2;
-            goto Lagain;
+            Expression te1 = e1;
+            Expression te2 = e2;
+            Type tt1 = t;
+            int r = mergeAliasThis(sc, tt1, op, te1, te2);
+            if (r)
+            {
+                e1 = te1;
+                e2 = te2;
+                t1 = e1.type;
+                t2 = e2.type;
+                t = tt1;
+                goto Lagain;
+            }
         }
         goto Lincompatible;
     }
@@ -3366,7 +3358,7 @@ extern (C++) Expression typeCombine(BinExp be, Scope* sc)
             return errorReturn();
     }
 
-    if (!typeMerge(sc, be.op, &be.type, &be.e1, &be.e2))
+    if (!typeMerge(sc, be.op, &be.type, &be.e1, &be.e2, be.aliasthislock))
         return errorReturn();
 
     // If the types have no value, return an error
