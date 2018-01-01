@@ -647,7 +647,7 @@ private extern(C++) final class InferTypeVisitor : Visitor
 
         // for static alias this: https://issues.dlang.org/show_bug.cgi?id=17684
         if (init.exp.op == TOKtype)
-            init.exp = resolveAliasThis(sc, init.exp);
+            init.exp = resolveAliasThis(sc, init.exp, 0); // TODO
 
         init.exp = resolveProperties(sc, init.exp);
         if (init.exp.op == TOKscope)

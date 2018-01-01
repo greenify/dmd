@@ -306,7 +306,7 @@ extern (C++) bool iterateAliasThis(Scope* sc, Expression e, IterateAliasThisDg d
             continue;
         assert(e1.type.deco);
         Expression e2 = null;
-        int success = dg(sc, e1, ctx, &e2);
+        int success = dg(sc, e1, ctx, e2);
         r = r || success;
         if (e2)
         {
