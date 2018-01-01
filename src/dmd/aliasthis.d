@@ -584,3 +584,28 @@ extern (C++) Type aliasThisOf(Type t, size_t idx, bool* islvalue = null)
     }
     return null;
 }
+
+extern (C++) bool iterateAliasThis2(F, Exp)(F f, Exp exp, Scope* sc, Expression e, IterateAliasThisDg dg, void* ctx)
+{
+    if (f.aliasthislock)
+        return false;
+
+    Expressions results;
+    iterateAliasThis(sc, e, dg, ctx, results);
+    if (results.dim == 1)
+    {
+        *f = results[0];
+        return true;
+    }
+    else if (results.dim > 1)
+    {
+        exp.error("Unable to unambiguously resolve %s. Candidates:", exp.toChars());
+        for (size_t j = 0; j < results.dim; ++j)
+        {
+            exp.error("%s", results[j].toChars());
+        }
+        *f  = new ErrorExp();
+        return true;
+    }
+    return false;
+}

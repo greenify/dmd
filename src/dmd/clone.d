@@ -370,7 +370,7 @@ extern (C++) bool needOpEquals(StructDeclaration sd)
                 continue;
             if (needOpEquals(ts.sym))
                 goto Lneed;
-            if (ts.sym.aliasthis) // https://issues.dlang.org/show_bug.cgi?id=14806
+            if (ts.sym.aliasThisSymbols.dim > 0) // https://issues.dlang.org/show_bug.cgi?id=14806
                 goto Lneed;
         }
         if (tv.isfloating())
@@ -690,7 +690,7 @@ private bool needToHash(StructDeclaration sd)
                 continue;
             if (needToHash(ts.sym))
                 goto Lneed;
-            if (ts.sym.aliasthis) // https://issues.dlang.org/show_bug.cgi?id=14948
+            if (ts.sym.aliasThisSymbols.dim > 0) // https://issues.dlang.org/show_bug.cgi?id=14948
                 goto Lneed;
         }
         if (tv.isfloating())

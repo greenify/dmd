@@ -1483,7 +1483,7 @@ private extern (C++) final class StatementSemanticVisitor : Visitor
                     int pos = 0;
                     while (exps.dim < dim)
                     {
-                        pos = expandAliasThisTuples(exps, pos);
+                        pos = expandAliasThisTuples(*exps, pos);
                         if (pos == -1)
                             break;
                     }
@@ -2375,16 +2375,11 @@ else
                 break;
 
             auto ad = isAggregate(ss.condition.type);
-            if (ad && ad.aliasthis && ss.condition.type != att)
-            {
-                if (!att && ss.condition.type.checkAliasThisRec())
-                    att = ss.condition.type;
-                if (auto e = resolveAliasThis(sc, ss.condition, true))
-                {
-                    ss.condition = e;
-                    continue;
-                }
-            }
+            // TODO
+            //if (!att && ss.condition.type.checkAliasThisRec())
+            //att = ss.condition.type;
+            //if (iterateAliasThis2(&ss.condition, ss, sc, ss.condition.e1, &atSubstUna, cast(void*) this, &results))
+                //return;
 
             if (ss.condition.op != TOKerror)
             {
@@ -2982,7 +2977,7 @@ else
 
             // for static alias this: https://issues.dlang.org/show_bug.cgi?id=17684
             if (rs.exp.op == TOKtype)
-                rs.exp = resolveAliasThis(sc, rs.exp);
+                rs.exp = resolveAliasThis(sc, rs.exp, 0); // TODO
 
             rs.exp = resolveProperties(sc, rs.exp);
             if (rs.exp.checkType())

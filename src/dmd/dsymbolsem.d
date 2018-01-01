@@ -228,16 +228,25 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
                 error(dsym.loc, "undefined identifier `%s`", dsym.ident.toChars());
             return;
         }
-        if (ad.aliasthis && s != ad.aliasthis)
+        auto td = s.isVarDeclaration() ? s.isVarDeclaration().toAlias().isTupleDeclaration() : null;
+        if (ad.aliasThisSymbols.dim > 0 && td && !ad.aliasThisSymbols[0].equals(td))
         {
-            error(dsym.loc, "there can be only one alias this");
-            return;
+            dsym.error("there can be only one tuple alias this", dsym.ident.toChars());
+        }
+        else if (ad.aliasThisSymbols.dim > 0 && !td)
+        {
+            if (ad.aliasThisSymbols[0].isVarDeclaration() &&
+                ad.aliasThisSymbols[0].isVarDeclaration().toAlias().isTupleDeclaration())
+            {
+                dsym.error("there can be only one tuple alias this", dsym.ident.toChars());
+            }
         }
 
-        /* disable the alias this conversion so the implicit conversion check
-         * doesn't use it.
-         */
-        ad.aliasthis = null;
+        //if (ad.aliasthis && s != ad.aliasthis)
+        //{
+            //error(dsym.loc, "there can be only one alias this");
+            //return;
+        //}
 
         Dsymbol sx = s;
         if (sx.isAliasDeclaration())
@@ -249,11 +258,12 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             assert(t);
             if (ad.type.implicitConvTo(t) > MATCH.nomatch)
             {
-                error(dsym.loc, "alias this is not reachable as `%s` already converts to `%s`", ad.toChars(), t.toChars());
+                dsym.error("alias this is not reachable as `%s` already converts to `%s`", ad.toChars(), t.toChars());
             }
         }
 
-        ad.aliasthis = s;
+        // TODO
+        //ad.aliasthis = s;
         dsym.semanticRun = PASSsemanticdone;
     }
 

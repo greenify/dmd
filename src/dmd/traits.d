@@ -933,8 +933,9 @@ extern (C++) Expression semanticTraits(TraitsExp e, Scope* sc)
         }
 
         auto exps = new Expressions();
-        if (ad.aliasthis)
-            exps.push(new StringExp(e.loc, cast(char*)ad.aliasthis.ident.toChars()));
+        // TODO:
+        //if (ad.aliasthis)
+            //exps.push(new StringExp(e.loc, cast(char*)ad.aliasthis.ident.toChars()));
         Expression ex = new TupleExp(e.loc, exps);
         ex = ex.expressionSemantic(sc);
         return ex;

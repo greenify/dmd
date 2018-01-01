@@ -3028,13 +3028,12 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                 // overload of opCall, therefore it's a call
                 if (exp.e1.op != TOKtype)
                 {
-                    if (sd.aliasthis && exp.e1.type != exp.att1)
+                    if (!exp.aliasthislock) // we don't need the recursion. Recursion done in iterateAliasThis
                     {
-                        if (!exp.att1 && exp.e1.type.checkAliasThisRec())
-                            exp.att1 = exp.e1.type;
-                        exp.e1 = resolveAliasThis(sc, exp.e1, 0); // TODO
-                        goto Lagain;
-                    }
+                        exp.aliasthislock = true;
+
+                        iterateAliasThis2(&result, exp, sc, exp.e1, &atSubstUna, cast(void*)this);
+                   }
                     exp.error("%s %s does not overload ()", sd.kind(), sd.toChars());
                     return setError();
                 }

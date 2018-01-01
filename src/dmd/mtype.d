@@ -2759,7 +2759,7 @@ extern (C++) abstract class Type : RootObject
                 /* Rewrite e.ident as:
                  *  e.aliasthis.ident
                  */
-                e = resolveAliasThis(sc, e);
+                e = resolveAliasThis(sc, e, 0); // TODO
                 auto die = new DotIdExp(e.loc, e, ident);
                 return returnExp(die.semanticY(sc, flag & 1));
             }
