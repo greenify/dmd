@@ -1,0 +1,17 @@
+`opCom` has been deprecated in favor of `opUnary`
+
+`opCom` has been an undocumented way to overload the negation operator `~`.
+
+$(H3 Corrective action:)
+
+---
+struct Foo
+{
+    int payload;
+    auto opUnary(string op)()
+    {
+        Foo result = {payload: ~payload};
+        return result;
+    }
+}
+---

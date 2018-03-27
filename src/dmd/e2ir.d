@@ -1907,8 +1907,9 @@ elem *toElem(Expression e, IRState *irs)
                 }
 
                 default:
+                    .deprecation(ce.loc, "`opCom` is deprecated. Please use `opUnary(string op)() if (op = \"~\")".ptr);
                     e = el_una(OPcom,ty,e1);
-                    break;
+                    assert(0);
             }
 
             elem_setLoc(e,ce.loc);
