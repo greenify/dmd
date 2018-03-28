@@ -1,0 +1,6 @@
+dmd now allows to incrementally set DFLAGS
+
+$(CONSOLE
+export DFLAGS="-betterC"
+dmd main.d # <- compiled with -betterC
+)

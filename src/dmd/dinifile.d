@@ -142,16 +142,35 @@ void updateRealEnvironment(StringTable* environment)
     {
         const name = sv.toDchars();
         const namelen = strlen(name);
+
+        // append
+        //const envval = readFromEnv(&environment, "DFLAGS");
+        const envval = "-version=Foo".ptr;
+        const envvallen = strlen(envval);
+
         const value = cast(const(char)*)sv.ptrvalue;
         if (!value) // deleted?
             return 0;
         const valuelen = strlen(value);
-        auto s = cast(char*)malloc(namelen + 1 + valuelen + 1);
+        const allocSize = namelen + 1 + valuelen + 1 + envvallen ? envvallen + 1 : 0;
+        auto s = cast(char*)malloc(allocSize);
         assert(s);
         memcpy(s, name, namelen);
+        import core.stdc.stdio;
+
+        printf(".=%s\n", s);
         s[namelen] = '=';
         memcpy(s + namelen + 1, value, valuelen);
+        printf(".=%s\n", s);
+        if (envvallen)
+        {
+            const dist = namelen + 1 + valuelen + 1;
+            //s[dist] = ' ';
+            //memcpy(s + dist + 1, envval, envvallen);
+        }
+        s[allocSize - 1] = 0;
         s[namelen + 1 + valuelen] = 0;
+        printf(".=%s\n", s);
         //printf("envput('%s')\n", s);
         putenv(s);
         return 0; // do all of them
