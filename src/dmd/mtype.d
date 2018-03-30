@@ -5093,7 +5093,10 @@ extern (C++) final class TypeFunction : TypeNext
             }
         }
         if (tb.ty == Terror)
+        {
+            //error(loc, "functions cannot infer return type");
             return true;
+        }
         return false;
     }
 
