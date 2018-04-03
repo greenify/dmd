@@ -140,9 +140,6 @@ $(RESULTS_DIR)/compilable/%.sh.out: compilable/%.sh $(RESULTS_DIR)/.created $(te
 $(RESULTS_DIR)/fail_compilation/%.d.out: fail_compilation/%.d $(RESULTS_DIR)/.created $(test_tools) $(DMD)
 	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* d
 
-$(RESULTS_DIR)/fail_compilation/%.html.out: fail_compilation/%.html $(RESULTS_DIR)/.created $(test_tools) $(DMD)
-	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* html
-
 quick:
 	$(MAKE) ARGS="" run_tests
 
