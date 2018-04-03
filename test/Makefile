@@ -125,22 +125,22 @@ all: run_tests
 
 test_tools=$(RESULTS_DIR)/d_do_test$(EXE) $(RESULTS_DIR)/sanitize_json$(EXE)
 
-$(RESULTS_DIR)/runnable/%.d.out: runnable/%.d $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/runnable/%.d.out: runnable/%.d $(test_tools) $(DMD) | $(RESULTS_DIR)/runnable
 	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* d
 
-$(RESULTS_DIR)/runnable/%.sh.out: runnable/%.sh $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/runnable/%.sh.out: runnable/%.sh $(test_tools) $(DMD) | $(RESULTS_DIR)/runnable
 	$(QUIET) ./tools/sh_do_test.sh $(<D) $*
 
-$(RESULTS_DIR)/compilable/%.d.out: compilable/%.d $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/compilable/%.d.out: compilable/%.d $(test_tools) $(DMD) | $(RESULTS_DIR)/compilable
 	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* d
 
-$(RESULTS_DIR)/compilable/%.sh.out: compilable/%.sh $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/compilable/%.sh.out: compilable/%.sh $(test_tools) $(DMD) | $(RESULTS_DIR)/compilable
 	$(QUIET) ./tools/sh_do_test.sh $(<D) $*
 
-$(RESULTS_DIR)/fail_compilation/%.d.out: fail_compilation/%.d $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/fail_compilation/%.d.out: fail_compilation/%.d $(test_tools) $(DMD) | $(RESULTS_DIR)/fail_compilation
 	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* d
 
-$(RESULTS_DIR)/fail_compilation/%.html.out: fail_compilation/%.html $(RESULTS_DIR)/.created $(test_tools) $(DMD)
+$(RESULTS_DIR)/fail_compilation/%.html.out: fail_compilation/%.html $(test_tools) $(DMD) | $(RESULTS_DIR)/fail_compilation
 	$(QUIET) $(RESULTS_DIR)/d_do_test $(<D) $* html
 
 quick:
@@ -148,37 +148,32 @@ quick:
 
 clean:
 	@echo "Removing output directory: $(RESULTS_DIR)"
-	$(QUIET)if [ -e $(RESULTS_DIR) ]; then rm -rf $(RESULTS_DIR); fi
+	$(QUIET)rm -rf $(RESULTS_DIR)
 
-$(RESULTS_DIR)/.created:
-	@echo Creating output directory: $(RESULTS_DIR)
-	$(QUIET)if [ ! -d $(RESULTS_DIR) ]; then mkdir $(RESULTS_DIR); fi
-	$(QUIET)if [ ! -d $(RESULTS_DIR)/runnable ]; then mkdir $(RESULTS_DIR)/runnable; fi
-	$(QUIET)if [ ! -d $(RESULTS_DIR)/compilable ]; then mkdir $(RESULTS_DIR)/compilable; fi
-	$(QUIET)if [ ! -d $(RESULTS_DIR)/fail_compilation ]; then mkdir $(RESULTS_DIR)/fail_compilation; fi
-	$(QUIET)touch $(RESULTS_DIR)/.created
+$(RESULTS_DIR) $(RESULTS_DIR)/runnable $(RESULTS_DIR)/compilable $(RESULTS_DIR)/fail_compilation:
+	@mkdir -p $@
 
 run_tests: start_runnable_tests start_compilable_tests start_fail_compilation_tests
 
 run_runnable_tests: $(runnable_test_results)
 
-start_runnable_tests: $(RESULTS_DIR)/.created $(test_tools)
+start_runnable_tests: $(test_tools)
 	@echo "Running runnable tests"
 	$(QUIET)$(MAKE) --no-print-directory run_runnable_tests
 
 run_compilable_tests: $(compilable_test_results)
 
-start_compilable_tests: $(RESULTS_DIR)/.created $(test_tools)
+start_compilable_tests: $(test_tools)
 	@echo "Running compilable tests"
 	$(QUIET)$(MAKE) --no-print-directory run_compilable_tests
 
 run_fail_compilation_tests: $(fail_compilation_test_results)
 
-start_fail_compilation_tests: $(RESULTS_DIR)/.created $(test_tools)
+start_fail_compilation_tests: $(test_tools)
 	@echo "Running fail compilation tests"
 	$(QUIET)$(MAKE) --no-print-directory run_fail_compilation_tests
 
-$(RESULTS_DIR)/d_do_test$(EXE): tools/d_do_test.d $(RESULTS_DIR)/.created
+$(RESULTS_DIR)/d_do_test$(EXE): tools/d_do_test.d | $(RESULTS_DIR)
 	@echo "Building d_do_test tool"
 	@echo "OS: '$(OS)'"
 	@echo "MODEL: '$(MODEL)'"
@@ -186,10 +181,9 @@ $(RESULTS_DIR)/d_do_test$(EXE): tools/d_do_test.d $(RESULTS_DIR)/.created
 	$(DMD) -conf= $(MODEL_FLAG) $(DEBUG_FLAGS) -unittest -run $<
 	$(DMD) -conf= $(MODEL_FLAG) $(DEBUG_FLAGS) -od$(RESULTS_DIR) -of$(RESULTS_DIR)$(DSEP)d_do_test$(EXE) $<
 
-$(RESULTS_DIR)/sanitize_json$(EXE): tools/sanitize_json.d $(RESULTS_DIR)/.created
+$(RESULTS_DIR)/sanitize_json$(EXE): tools/sanitize_json.d | $(RESULTS_DIR)
 	@echo "Building sanitize_json tool"
 	@echo "OS: '$(OS)'"
 	@echo "MODEL: '$(MODEL)'"
 	@echo "PIC: '$(PIC_FLAG)'"
 	$(DMD) -conf= $(MODEL_FLAG) $(DEBUG_FLAGS) -od$(RESULTS_DIR) -of$(RESULTS_DIR)$(DSEP)sanitize_json$(EXE) -i $<
-
