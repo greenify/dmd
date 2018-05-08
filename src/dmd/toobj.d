@@ -101,19 +101,16 @@ void genModuleInfo(Module m)
     ClassDeclarations aclasses;
 
     //printf("members.dim = %d\n", members.dim);
-    foreach (i; 0 .. m.members.dim)
+    foreach (member; *m.members)
     {
-        Dsymbol member = (*m.members)[i];
-
         //printf("\tmember '%s'\n", member.toChars());
         member.addLocalClass(&aclasses);
     }
 
     // importedModules[]
     size_t aimports_dim = m.aimports.dim;
-    for (size_t i = 0; i < m.aimports.dim; i++)
+    foreach (mod; m.aimports)
     {
-        Module mod = m.aimports[i];
         if (!mod.needmoduleinfo)
             aimports_dim--;
     }
@@ -179,10 +176,8 @@ void genModuleInfo(Module m)
     if (flags & MIimportedModules)
     {
         dtb.size(aimports_dim);
-        foreach (i; 0 .. m.aimports.dim)
+        foreach (mod; m.aimports)
         {
-            Module mod = m.aimports[i];
-
             if (!mod.needmoduleinfo)
                 continue;
 
@@ -199,9 +194,8 @@ void genModuleInfo(Module m)
     if (flags & MIlocalClasses)
     {
         dtb.size(aclasses.dim);
-        foreach (i; 0 .. aclasses.dim)
+        foreach (cd; aclasses)
         {
-            ClassDeclaration cd = aclasses[i];
             dtb.xoff(toSymbol(cd), 0, TYnptr);
         }
     }
@@ -574,9 +568,8 @@ void toObjFile(Dsymbol ds, bool multiobj)
             // Put out the (*vtblInterfaces)[].vtbl[]
             // This must be mirrored with ClassDeclaration.baseVtblOffset()
             //printf("putting out %d interface vtbl[]s for '%s'\n", vtblInterfaces.dim, toChars());
-            foreach (i; 0 .. cd.vtblInterfaces.dim)
+            foreach (i, b; *cd.vtblInterfaces)
             {
-                BaseClass *b = (*cd.vtblInterfaces)[i];
                 offset += emitVtbl(dtb, b, b.vtbl, cd, i);
             }
 
@@ -585,9 +578,8 @@ void toObjFile(Dsymbol ds, bool multiobj)
             //printf("putting out overriding interface vtbl[]s for '%s' at offset x%x\n", toChars(), offset);
             for (ClassDeclaration pc = cd.baseClass; pc; pc = pc.baseClass)
             {
-                foreach (i; 0 .. pc.vtblInterfaces.dim)
+                foreach (i, b; *pc.vtblInterfaces)
                 {
-                    BaseClass *b = (*pc.vtblInterfaces)[i];
                     FuncDeclarations bvtbl;
                     if (b.fillVtbl(cd, &bvtbl, 0))
                     {

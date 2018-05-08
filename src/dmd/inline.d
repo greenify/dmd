@@ -349,9 +349,9 @@ public:
             auto newa = new Expressions();
             newa.setDim(a.dim);
 
-            foreach (i; 0 .. a.dim)
+            foreach (i, e; *a)
             {
-                (*newa)[i] = doInlineAs!Expression((*a)[i], ids);
+                (*newa)[i] = doInlineAs!Expression(e, ids);
             }
             return newa;
         }
@@ -365,9 +365,9 @@ public:
         override void visit(SymOffExp e)
         {
             //printf("SymOffExp.doInlineAs!%s(%s)\n", Result.stringof.ptr, e.toChars());
-            foreach (i; 0 .. ids.from.dim)
+            foreach (i, v; ids.from)
             {
-                if (e.var != ids.from[i])
+                if (e.var != v)
                     continue;
                 auto se = cast(SymOffExp)e.copy();
                 se.var = cast(Declaration)ids.to[i];
@@ -380,9 +380,9 @@ public:
         override void visit(VarExp e)
         {
             //printf("VarExp.doInlineAs!%s(%s)\n", Result.stringof.ptr, e.toChars());
-            foreach (i; 0 .. ids.from.dim)
+            foreach (i, v; ids.from)
             {
-                if (e.var != ids.from[i])
+                if (e.var != v)
                     continue;
                 auto ve = cast(VarExp)e.copy();
                 ve.var = cast(Declaration)ids.to[i];
@@ -486,9 +486,8 @@ public:
                     // Need to figure this out before inlining can work for tuples
                     if (auto tup = vd.toAlias().isTupleDeclaration())
                     {
-                        foreach (i; 0 .. tup.objects.dim)
+                        foreach (i, se; *tup.objects)
                         {
-                            DsymbolExp se = (*tup.objects)[i];
                             assert(se.op == TOK.dSymbol);
                             se.s;
                         }
@@ -501,9 +500,9 @@ public:
 
                 if (ids.fd && vd == ids.fd.nrvo_var)
                 {
-                    foreach (i; 0 .. ids.from.dim)
+                    foreach (i, v; ids.from)
                     {
-                        if (vd != ids.from[i])
+                        if (vd != v)
                             continue;
                         if (vd._init && !vd._init.isVoidInitializer())
                         {
@@ -885,17 +884,17 @@ public:
 
     override void visit(CompoundStatement s)
     {
-        foreach (i; 0 .. s.statements.dim)
+        foreach (e; *s.statements)
         {
-            inlineScan((*s.statements)[i]);
+            inlineScan(e);
         }
     }
 
     override void visit(UnrolledLoopStatement s)
     {
-        foreach (i; 0 .. s.statements.dim)
+        foreach (e; *s.statements)
         {
-            inlineScan((*s.statements)[i]);
+            inlineScan(e);
         }
     }
 
@@ -954,11 +953,11 @@ public:
         s.sdefault = cast(DefaultStatement)sdefault;
         if (s.cases)
         {
-            foreach (i; 0 .. s.cases.dim)
+            foreach (ref scase; *s.cases)
             {
-                Statement scase = (*s.cases)[i];
-                inlineScan(scase);
-                (*s.cases)[i] = cast(CaseStatement)scase;
+                Statement _scase = scase;
+                inlineScan(_scase);
+                scase = cast(CaseStatement)scase;
             }
         }
     }
@@ -1045,9 +1044,9 @@ public:
     {
         if (arguments)
         {
-            foreach (i; 0 .. arguments.dim)
+            foreach (arg; *arguments)
             {
-                inlineScan((*arguments)[i]);
+                inlineScan(arg);
             }
         }
     }
@@ -1065,9 +1064,9 @@ public:
             TupleDeclaration td = vd.toAlias().isTupleDeclaration();
             if (td)
             {
-                foreach (i; 0 .. td.objects.dim)
+                foreach (e; *td.objects)
                 {
-                    DsymbolExp se = cast(DsymbolExp)(*td.objects)[i];
+                    auto se = cast(DsymbolExp) e;
                     assert(se.op == TOK.dSymbol);
                     scanVar(se.s); // TODO
                 }
@@ -1404,9 +1403,8 @@ public:
         Dsymbols* decls = d.include(null);
         if (decls)
         {
-            foreach (i; 0 .. decls.dim)
+            foreach (s; *decls)
             {
-                Dsymbol s = (*decls)[i];
                 //printf("AttribDeclaration.inlineScan %s\n", s.toChars());
                 s.accept(this);
             }
@@ -1418,9 +1416,8 @@ public:
         //printf("AggregateDeclaration.inlineScan(%s)\n", toChars());
         if (ad.members)
         {
-            foreach (i; 0 .. ad.members.dim)
+            foreach (s; *ad.members)
             {
-                Dsymbol s = (*ad.members)[i];
                 //printf("inline scan aggregate symbol '%s'\n", s.toChars());
                 s.accept(this);
             }
@@ -1435,9 +1432,8 @@ public:
         }
         if (!ti.errors && ti.members)
         {
-            foreach (i; 0 .. ti.members.dim)
+            foreach (s; *ti.members)
             {
-                Dsymbol s = (*ti.members)[i];
                 s.accept(this);
             }
         }
@@ -1703,9 +1699,8 @@ public void inlineScanModule(Module m)
 
     //printf("Module = %p\n", m.sc.scopesym);
 
-    foreach (i; 0 .. m.members.dim)
+    foreach (s; *m.members)
     {
-        Dsymbol s = (*m.members)[i];
         //if (global.params.verbose)
         //    message("inline scan symbol %s", s.toChars());
         scope InlineScanVisitor v = new InlineScanVisitor();
@@ -1853,10 +1848,9 @@ private void expandInline(Loc callLoc, FuncDeclaration fd, FuncDeclaration paren
     if (arguments && arguments.dim)
     {
         assert(fd.parameters.dim == arguments.dim);
-        foreach (i; 0 .. arguments.dim)
+        foreach (i, arg; *arguments)
         {
             auto vfrom = (*fd.parameters)[i];
-            auto arg = (*arguments)[i];
 
             auto ei = new ExpInitializer(vfrom.loc, arg);
             auto vto = new VarDeclaration(vfrom.loc, vfrom.type, vfrom.ident, ei);
