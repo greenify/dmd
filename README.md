@@ -9,6 +9,7 @@ DMD
 [![CircleCI](https://circleci.com/gh/dlang/dmd/tree/master.svg?style=svg)](https://circleci.com/gh/dlang/dmd/tree/master)
 [![SemaphoreCI](https://semaphoreci.com/api/v1/dlang/dmd-2/branches/master/badge.svg)](https://semaphoreci.com/dlang/dmd-2)
 [![AppVeyor](https://ci.appveyor.com/api/projects/status/mv0y9lqyk7jh0x8d?svg=true)](https://ci.appveyor.com/project/greenify/dmd)
+[![Buildkite](https://badge.buildkite.com/01239dde8424d69809d08769015bbdb9b90d05082e534d2f82.svg)](https://buildkite.com/dlang/dmd)
 
 DMD is the reference compiler for the D programming language.
 
